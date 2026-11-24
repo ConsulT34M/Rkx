@@ -1,0 +1,5 @@
+.captcha-challenge{padding:14px;margin:0 0 17px;border:1px solid #f2d4ba;border-radius:9px;background:#fff8f2}
+.captcha-challenge p{margin:0 0 12px;color:#8b4b1b;font-size:12px;line-height:1.5}
+.captcha-challenge #recaptchaWidget{min-height:0}
+.captcha-challenge small{display:block;margin-top:10px;color:#7f8790;font-size:10px;line-height:1.4}
+.captcha-challenge a{color:#c85e12;text-decoration:underline}
