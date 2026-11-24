@@ -1,9 +1,10 @@
 window.rkxCaptcha = (() => {
+  const storageKey = 'rkx-captcha-required';
   const panel = document.querySelector('#captchaChallenge');
   const message = document.querySelector('#captchaMessage');
   let siteKey = null;
   let widgetId = null;
-  let required = false;
+  let required = sessionStorage.getItem(storageKey) === '1';
   let loading = null;
 
   function loadScript() {
@@ -24,6 +25,7 @@ window.rkxCaptcha = (() => {
 
   function show() {
     required = true;
+    sessionStorage.setItem(storageKey, '1');
     panel.classList.remove('hidden');
     if (!siteKey) {
       message.textContent = 'CAPTCHA 키가 설정되지 않았습니다. 관리자에게 문의해 주세요.';
@@ -43,6 +45,7 @@ window.rkxCaptcha = (() => {
 
   function hide() {
     required = false;
+    sessionStorage.removeItem(storageKey);
     panel.classList.add('hidden');
     reset();
   }

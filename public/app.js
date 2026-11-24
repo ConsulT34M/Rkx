@@ -19,19 +19,23 @@ async function api(url, options = {}) {
   if (!response.ok) throw Object.assign(new Error(data.error || '요청에 실패했습니다.'), { status: response.status, captchaRequired: data.captchaRequired === true });
   return data;
 }
-function showView(view) {
+const allowedViews = ['home', 'market', 'consult', 'process', 'privacy', 'terms', 'admin', 'partner'];
+function showView(view, { updateHistory = true } = {}) {
+  if (!allowedViews.includes(view)) return;
   if (view === 'admin' && state.user?.role !== 'admin') return toast('관리자만 이용할 수 있습니다.');
   if (view === 'partner' && state.user?.role !== 'partner') return toast('수탁사 담당자만 이용할 수 있습니다.');
   state.view = view;
   $$('.view').forEach(el => el.classList.toggle('active', el.id === `view-${view}`));
   $('.main-nav').classList.remove('open'); $('#menuButton').setAttribute('aria-expanded', 'false');
-  history.replaceState({}, '', `#${view}`); scrollTo({ top: 0, behavior: 'smooth' });
+  if (updateHistory && location.hash !== `#${view}`) history.pushState({ view }, '', `#${view}`);
+  scrollTo({ top: 0, behavior: 'smooth' });
   if (view === 'consult') loadTickets();
   if (view === 'market') window.marketUI.enter();
   if (view === 'admin') loadAdmin();
   if (view === 'partner') loadPartner();
 }
 function openAuth(mode = 'login') {
+  if (mode === 'login') $('#loginForm').reset();
   $$('.auth-tabs button').forEach(button => button.classList.toggle('active', button.dataset.auth === mode));
   $('#loginForm').classList.toggle('hidden', mode !== 'login');
   $('#registerForm').classList.toggle('hidden', mode !== 'register');
@@ -95,12 +99,12 @@ async function logout() {
 function setTicketType(type) {
   state.ticketType = type;
   $$('.consult-tabs button').forEach(button => button.classList.toggle('active', button.dataset.ticketType === type));
-  const titles = { consultation: ['상담 접수', '내용을 남겨주시면 담당자가 확인합니다.'], reentry: ['상담 재입장', '이전 상담을 이어서 진행할 내용을 남겨주세요.'], phone: ['전화 상담 요청', '희망 연락 시간을 남기고 녹취 여부를 선택하세요.'] };
+  const titles = { consultation: ['상담 접수', '내용을 남겨주시면 담당자가 확인합니다.'], phone: ['전화 상담 요청', '희망 연락 시간을 남기고 녹취 여부를 선택하세요.'] };
   $('#ticketIntro h2').textContent = titles[type][0]; $('#ticketIntro p').textContent = titles[type][1];
   $('#preferredTimeField').classList.toggle('hidden', type !== 'phone');
   $('#preferredTimeField input').required = type === 'phone';
   $('#recordingField').classList.toggle('hidden', type !== 'phone');
-  $('#ticketForm .form-submit').textContent = type === 'phone' ? '전화 상담 신청하기' : type === 'reentry' ? '재입장 신청하기' : '상담 접수하기';
+  $('#ticketForm .form-submit').textContent = type === 'phone' ? '전화 상담 신청하기' : '상담 접수하기';
   $('#ticketFeedback').textContent = '';
 }
 async function submitTicket(event) {
@@ -129,6 +133,7 @@ async function loadPublicConfig() {
     window.rkxCaptcha.configure(recaptchaSiteKey);
     if (partnerPhone) {
       state.partnerPhone = partnerPhone;
+      $('#samplePhone').classList.add('hidden');
       $('#partnerPhoneLink').href = `tel:${partnerPhone}`;
       renderPhone();
       $('#partnerPhoneLink').classList.remove('hidden');
@@ -232,6 +237,7 @@ $('#menuButton').addEventListener('click', () => { const open = $('.main-nav').c
 $('#loginForm').addEventListener('submit', event => { event.preventDefault(); submitAuth(event.currentTarget, 'login'); });
 $('#registerForm').addEventListener('submit', event => { event.preventDefault(); submitAuth(event.currentTarget, 'register'); });
 $('#closeAuth').addEventListener('click', () => $('#authDialog').close());
+$('#authDialog').addEventListener('close', () => { $('#loginForm').reset(); $('#registerForm').reset(); $('#authFeedback').textContent = ''; });
 $('#openPolicyFromAuth').addEventListener('click', () => { $('#authDialog').close(); showView('privacy'); });
 $('#openTermsFromAuth').addEventListener('click', () => { $('#authDialog').close(); showView('terms'); });
 $('#ticketForm').addEventListener('submit', submitTicket);
@@ -244,6 +250,12 @@ $('#recordingToggle').addEventListener('click', () => {
   $('#recordingToggle').setAttribute('aria-pressed', String(checkbox.checked));
   $('#recordingToggle').textContent = checkbox.checked ? '녹취 요청함' : '녹취 요청 안 함';
 });
-window.addEventListener('hashchange', () => { const view = location.hash.slice(1); if (['home','market','consult','process','privacy','terms','admin','partner'].includes(view)) showView(view); });
-refreshUser().then(() => { const initial = location.hash.slice(1); if (['market','consult','process','privacy','terms','admin','partner'].includes(initial)) showView(initial); });
+function syncViewFromHistory() {
+  const view = location.hash.slice(1) || 'home';
+  if (view !== state.view) showView(view, { updateHistory: false });
+}
+window.addEventListener('popstate', syncViewFromHistory);
+window.addEventListener('hashchange', syncViewFromHistory);
+window.addEventListener('pageshow', () => { $('#loginForm').reset(); $('#registerForm').reset(); });
+refreshUser().then(() => { const initial = location.hash.slice(1); if (allowedViews.includes(initial)) showView(initial, { updateHistory: false }); });
 loadPublicConfig(); window.marketUI.init();
