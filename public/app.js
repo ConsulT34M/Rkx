@@ -1,13 +1,15 @@
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-const state = { user: null, view: 'home', ticketType: 'consultation', partnerChatUser: null, chatTimer: null, partnerPhone: null };
+const state = { user: null, view: 'home', ticketType: 'consultation', ticketRequestId: null, partnerChatUser: null, chatTimer: null, partnerPhone: null };
 const ticketNames = { consultation: '상담', reentry: '재입장', phone: '전화 상담' };
+const categoryNames = { market: '시세·시장 정보', account: '계정·로그인', service: '서비스 이용', other: '기타 문의' };
 const statusNames = { received: '접수 완료', in_progress: '진행 중', completed: '상담 완료' };
 const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 const won = value => Number.isFinite(Number(value)) ? `${new Intl.NumberFormat('ko-KR').format(Math.round(value))}원` : '—';
 const percent = value => `${Number(value) >= 0 ? '+' : ''}${(Number(value) * 100).toFixed(2)}%`;
 const when = value => new Date(value).toLocaleString('ko-KR', { dateStyle: 'short', timeStyle: 'short' });
 let toastTimer;
+let lastSessionTouch = Date.now();
 
 function toast(message) {
   const el = $('#toast'); el.textContent = message; el.classList.add('show');
@@ -55,28 +57,46 @@ function renderPhone() {
   $('#partnerPhoneLink').textContent = state.user?.role === 'customer' ? `녹취 안내 확인 후 ${state.partnerPhone} 연결` : '로그인 후 전화 연결';
 }
 function renderIdentity() {
-  $('#identityStatus').textContent = state.user?.role === 'customer' ? '본인확인 완료' : '가입 시 본인확인 진행';
+  $('#identityStatus').textContent = state.user?.role === 'customer'
+    ? state.user.identity_status === 'verified' ? '본인확인 완료' : '본인확인 미진행 · 추후 연동'
+    : '로그인 후 확인 가능';
 }
 async function refreshUser() {
+  const previousUser = state.user;
   try { state.user = (await api('/api/auth/me')).user; } catch { state.user = null; }
+  lastSessionTouch = Date.now();
   renderHeader(); renderIdentity();
+  if (previousUser && !state.user) {
+    closeChat();
+    if (['admin', 'partner'].includes(state.view)) showView('home');
+    toast('세션이 만료되었습니다. 다시 로그인해 주세요.');
+  }
+}
+function touchSession() {
+  if (!state.user || Date.now() - lastSessionTouch < 5 * 60 * 1000) return;
+  lastSessionTouch = Date.now();
+  refreshUser();
 }
 async function submitAuth(form, mode) {
   const fd = new FormData(form), payload = Object.fromEntries(fd.entries());
-  if (mode === 'register') for (const key of ['termsConsent', 'privacyConsent', 'outsourcingConsent']) payload[key] = fd.has(key);
+  if (mode === 'register') {
+    for (const key of ['termsConsent', 'privacyConsent', 'outsourcingConsent']) payload[key] = fd.has(key);
+    const password = payload.password || '';
+    const missing = [];
+    if (password.length < 8) missing.push('8자 이상');
+    if (!/[A-Z]/.test(password)) missing.push('영문 대문자');
+    if (!/[a-z]/.test(password)) missing.push('영문 소문자');
+    if (!/[^A-Za-z0-9]/.test(password)) missing.push('특수기호');
+    if (missing.length) { $('#authFeedback').textContent = `비밀번호 조건: ${missing.join(', ')}`; return; }
+  }
   if (mode === 'login' && window.rkxCaptcha.isRequired()) {
     payload.captchaToken = window.rkxCaptcha.response();
     if (!payload.captchaToken) { $('#authFeedback').textContent = '로봇 확인을 완료해 주세요.'; return; }
   }
   try {
     const result = await api(`/api/auth/${mode}`, { method: 'POST', body: JSON.stringify(payload) });
-    if (mode === 'register') {
-      $('#authFeedback').textContent = '본인확인 화면으로 이동합니다. 완료 결과를 받으면 계정이 생성됩니다.';
-      location.assign(result.verificationUrl);
-      return;
-    }
-    state.user = result.user; window.rkxCaptcha.hide(); $('#authDialog').close(); form.reset(); renderHeader(); renderIdentity();
-    toast('로그인되었습니다.');
+    state.user = result.user; lastSessionTouch = Date.now(); window.rkxCaptcha.hide(); $('#authDialog').close(); form.reset(); renderHeader(); renderIdentity();
+    toast(mode === 'register' ? '회원가입이 완료되었습니다. 본인확인은 추후 진행됩니다.' : '로그인되었습니다.');
     if (state.user.role === 'admin') showView('admin');
     else if (state.user.role === 'partner') showView('partner');
     else if (state.view === 'consult') loadTickets();
@@ -98,6 +118,7 @@ async function logout() {
 }
 function setTicketType(type) {
   state.ticketType = type;
+  state.ticketRequestId = null;
   $$('.consult-tabs button').forEach(button => button.classList.toggle('active', button.dataset.ticketType === type));
   const titles = { consultation: ['상담 접수', '내용을 남겨주시면 담당자가 확인합니다.'], phone: ['전화 상담 요청', '희망 연락 시간을 남기고 녹취 여부를 선택하세요.'] };
   $('#ticketIntro h2').textContent = titles[type][0]; $('#ticketIntro p').textContent = titles[type][1];
@@ -110,10 +131,11 @@ function setTicketType(type) {
 async function submitTicket(event) {
   event.preventDefault(); if (!state.user) return openAuth('login');
   const fd = new FormData(event.currentTarget);
-  const payload = { type: state.ticketType, subject: fd.get('subject'), description: fd.get('description'), preferredTime: fd.get('preferredTime'), recordingConsent: fd.has('recordingConsent') };
+  state.ticketRequestId ||= crypto.randomUUID();
+  const payload = { requestId: state.ticketRequestId, type: state.ticketType, category: fd.get('category'), subject: fd.get('subject'), description: fd.get('description'), preferredTime: fd.get('preferredTime'), recordingConsent: fd.has('recordingConsent') };
   try {
     const result = await api('/api/tickets', { method: 'POST', body: JSON.stringify(payload) });
-    event.currentTarget.reset(); $('#recordingToggle').setAttribute('aria-pressed', 'false'); $('#recordingToggle').textContent = '녹취 요청 안 함';
+    event.currentTarget.reset(); state.ticketRequestId = null; $('#recordingToggle').setAttribute('aria-pressed', 'false'); $('#recordingToggle').textContent = '녹취 요청 안 함';
     const delivery = result.partnerStatus === 'sent' ? '말결 접수 채널로 전달되었습니다.' : result.partnerStatus === 'failed' ? '말결 전송 실패 · 담당자 확인이 필요합니다.' : '말결 실제 전송은 미설정이며 테스트 화면에 저장되었습니다.';
     $('#ticketFeedback').textContent = `접수번호 ${result.receiptNumber} · ${delivery}`;
     loadTickets(); toast('상담이 접수되었습니다.');
@@ -124,7 +146,7 @@ async function loadTickets() {
   if (!state.user || state.user.role !== 'customer') { target.textContent = '고객 계정으로 로그인하면 상담 내역이 표시됩니다.'; return; }
   try {
     const { tickets } = await api('/api/tickets');
-    target.innerHTML = tickets.length ? tickets.slice(0, 5).map(t => `<div class="ticket-mini"><strong>${escapeHtml(t.receipt_number)}</strong><span>${escapeHtml(t.subject)}</span><span>${ticketNames[t.type]} · ${statusNames[t.status]} · ${when(t.created_at)}</span></div>`).join('') : '아직 접수된 상담이 없습니다.';
+    target.innerHTML = tickets.length ? tickets.slice(0, 5).map(t => `<div class="ticket-mini"><strong>${escapeHtml(t.receipt_number)}</strong><span>${escapeHtml(t.subject)}</span><span>${ticketNames[t.type]} · ${categoryNames[t.category] || '기타 문의'} · ${statusNames[t.status]} · ${when(t.created_at)}</span></div>`).join('') : '아직 접수된 상담이 없습니다.';
   } catch (error) { target.textContent = error.message; }
 }
 async function loadPublicConfig() {
@@ -172,6 +194,20 @@ async function loadAdmin() {
     const data = await api('/api/admin/overview');
     $('#adminContent').innerHTML = `<div class="admin-stats"><div class="admin-stat"><span>가입 고객</span><strong>${data.users.total || 0}</strong></div><div class="admin-stat"><span>접수 상담</span><strong>${data.tickets.received || 0}</strong></div><div class="admin-stat"><span>가입 신청</span><strong>${data.signups.length}</strong></div></div><div class="admin-toolbar"><span>조회·다운로드는 접속 기록으로 남습니다.</span><a class="button button-outline small" href="/api/admin/export">마스킹 목록 다운로드</a></div><div class="admin-layout"><div class="admin-card"><h2>가입 신청 · 본인확인 결과</h2>${data.signups.length ? data.signups.map(s => `<div class="admin-ticket"><strong>신청 #${s.id} · ${escapeHtml(s.name)}</strong><small>${escapeHtml(s.email)} · ${escapeHtml(s.status)} · ${when(s.created_at)}</small></div>`).join('') : '<p>가입 신청이 없습니다.</p>'}</div><div class="admin-card"><h2>상담 접수 상태</h2>${data.recent.length ? data.recent.map(t => `<div class="admin-ticket"><strong>${escapeHtml(t.receipt_number)}</strong><small>${escapeHtml(t.customer_key || '')} · ${ticketNames[t.type]} · ${statusNames[t.status]} · ${escapeHtml(t.assignment_kind || '미배정')} · ${when(t.created_at)}</small></div>`).join('') : '<p>접수된 상담이 없습니다.</p>'}</div></div><div class="admin-layout admin-lower"><div class="admin-card"><h2>회원 기본정보 · 마스킹</h2>${data.members.length ? data.members.map(m => `<div class="admin-ticket"><strong>${escapeHtml(m.customer_key || '')} · ${escapeHtml(m.name)}</strong><small>${escapeHtml(m.email)} · ${escapeHtml(m.phone)} · ${escapeHtml(m.identity_status)} · ${when(m.created_at)}</small></div>`).join('') : '<p>가입 고객이 없습니다.</p>'}</div><div class="admin-card"><h2>내 접근 기록</h2>${data.accessLogs.map(l => `<div class="admin-ticket"><strong>${escapeHtml(l.action)} · ${escapeHtml(l.target_type)}</strong><small>${when(l.created_at)}</small></div>`).join('')}</div></div>`;
   } catch (error) { $('#adminContent').textContent = error.message; }
+}
+async function searchAdmin(event) {
+  event.preventDefault();
+  const form = event.currentTarget, kind = form.dataset.adminSearch, key = form.elements.key.value.trim();
+  const target = $('#adminSearchResult');
+  target.className = 'admin-search-result';
+  target.textContent = '조회 중입니다.';
+  try {
+    const { record } = await api(`/api/admin/search?kind=${encodeURIComponent(kind)}&key=${encodeURIComponent(key)}`);
+    if (!record) { target.textContent = '일치하는 결과가 없습니다.'; return; }
+    if (kind === 'member') target.innerHTML = `<strong>회원 ${escapeHtml(record.customer_key)}</strong>${escapeHtml(record.name)} · ${escapeHtml(record.email)} · ${escapeHtml(record.phone)}<br>본인확인 ${escapeHtml(record.identity_status)} · 가입 ${when(record.created_at)}`;
+    else if (kind === 'signup') target.innerHTML = `<strong>가입 신청 #${escapeHtml(record.id)}</strong>${escapeHtml(record.name)} · ${escapeHtml(record.email)}<br>${escapeHtml(record.status)} · 신청 ${when(record.created_at)}${record.completed_at ? ` · 처리 ${when(record.completed_at)}` : ''}`;
+    else target.innerHTML = `<strong>상담 ${escapeHtml(record.receipt_number)}</strong>회원 ${escapeHtml(record.customer_key)} · ${ticketNames[record.type] || '상담'} · ${categoryNames[record.category] || '기타 문의'}<br>${statusNames[record.status] || escapeHtml(record.status)} · ${record.partner_reference ? `수탁사 상담번호 ${escapeHtml(record.partner_reference)}` : '접수 확인 대기'} · ${when(record.created_at)}`;
+  } catch (error) { target.textContent = error.message; }
 }
 async function loadPartner() {
   if (state.user?.role !== 'partner') return;
@@ -234,6 +270,8 @@ document.addEventListener('submit', async event => {
   catch (error) { toast(error.message); }
 });
 $('#menuButton').addEventListener('click', () => { const open = $('.main-nav').classList.toggle('open'); $('#menuButton').setAttribute('aria-expanded', String(open)); });
+document.addEventListener('pointerdown', touchSession, { passive: true });
+document.addEventListener('keydown', touchSession);
 $('#loginForm').addEventListener('submit', event => { event.preventDefault(); submitAuth(event.currentTarget, 'login'); });
 $('#registerForm').addEventListener('submit', event => { event.preventDefault(); submitAuth(event.currentTarget, 'register'); });
 $('#closeAuth').addEventListener('click', () => $('#authDialog').close());
@@ -241,6 +279,9 @@ $('#authDialog').addEventListener('close', () => { $('#loginForm').reset(); $('#
 $('#openPolicyFromAuth').addEventListener('click', () => { $('#authDialog').close(); showView('privacy'); });
 $('#openTermsFromAuth').addEventListener('click', () => { $('#authDialog').close(); showView('terms'); });
 $('#ticketForm').addEventListener('submit', submitTicket);
+$('#ticketForm').addEventListener('input', () => { state.ticketRequestId = null; });
+$('#ticketForm').addEventListener('change', () => { state.ticketRequestId = null; });
+$$('[data-admin-search]').forEach(form => form.addEventListener('submit', searchAdmin));
 $('#openChatFromConsult').addEventListener('click', openChat);
 $('#chatLauncher').addEventListener('click', openChat);
 $('#closeChat').addEventListener('click', closeChat);
