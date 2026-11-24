@@ -35,6 +35,8 @@ npm run partner:create -- counselor@example.com 'LongPassword!A8' '말결 상담
 
 [Google reCAPTCHA 관리 콘솔](https://www.google.com/recaptcha/admin/create)에서 **v2 체크박스** 키를 발급하고 `.env`의 `RECAPTCHA_SITE_KEY`, `RECAPTCHA_SECRET_KEY`를 설정하세요. 로컬에서 시험할 때는 개발용 키의 허용 도메인에 `localhost`를 추가하고 `APP_ORIGIN`과 접속 주소를 일치시켜야 합니다. 두 키가 없으면 두 번 실패한 뒤 로그인은 차단되며 설정 안내가 표시됩니다. 브라우저 토큰은 서버에서 Google `siteverify` API로 검사하고, 응답의 호스트 이름이 `APP_ORIGIN`과 일치할 때만 인정합니다. 운영 키와 개발 키는 분리하세요.
 
+로컬 화면 확인에는 [Google 공식 FAQ의 reCAPTCHA v2 테스트 키](https://developers.google.com/recaptcha/docs/faq/)를 `.env`에 입력할 수 있습니다. 테스트 키는 Google 검증 응답에 `testkey.google.com`을 반환하므로, 서버는 로컬 호스트에서 이 테스트 응답만 허용합니다. 테스트 키는 모든 검증 요청을 통과시키고 화면에 경고가 표시되므로 **실제 사용자 서비스에는 사용할 수 없습니다.** `NODE_ENV=production`에서는 이 테스트 키로 서버가 시작되지 않도록 막았습니다. GitHub에 올리는 `.env.example`에는 키를 넣지 않습니다.
+
 ## 수탁사 연계 인터페이스
 
 첨부 자료를 기준으로 **(주)인증정보평가(IJINFO)**와 **(주)말결(MK)** 연결 지점을 마련했습니다. 실제 계약/API 명세가 없어 아래 요청·응답 형식은 **프로토타입 규격**입니다. 운영 전 수탁사 명세에 맞춰 수정해야 합니다.

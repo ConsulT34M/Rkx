@@ -21,6 +21,14 @@ test('Google token verification uses POST and checks the site hostname', async (
   assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'example.com', fetchImpl }), false);
 });
 
+test('Google public test key works only for local development hosts', async () => {
+  const secret = '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
+  const fetchImpl = async () => ({ ok: true, json: async () => ({ success: true, hostname: 'testkey.google.com' }) });
+  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret, hostname: 'localhost', fetchImpl }), true);
+  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret, hostname: 'example.com', fetchImpl }), false);
+  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'localhost', fetchImpl }), false);
+});
+
 test('missing, rejected, and provider-failed CAPTCHA tokens never pass', async () => {
   const rejected = async () => ({ ok: true, json: async () => ({ success: false, hostname: 'localhost' }) });
   const unavailable = async () => ({ ok: false });

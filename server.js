@@ -25,6 +25,11 @@ const unknownLoginFailures = new Map();
 const marketCache = new Map();
 const captchaSiteKey = process.env.RECAPTCHA_SITE_KEY?.trim() || '';
 const captchaSecretKey = process.env.RECAPTCHA_SECRET_KEY?.trim() || '';
+if (process.env.NODE_ENV === 'production' &&
+    (captchaSiteKey === '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI' ||
+     captchaSecretKey === '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe')) {
+  throw new Error('Google reCAPTCHA 테스트 키는 운영 환경에서 사용할 수 없습니다.');
+}
 const captchaConfigured = Boolean(captchaSiteKey && captchaSecretKey);
 const route = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
