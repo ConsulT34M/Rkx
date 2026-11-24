@@ -7,6 +7,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { captchaNeeded, verifyCaptchaToken } from './captcha.js';
+import { passwordIssues } from './auth-policy.js';
 
 const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -66,8 +67,14 @@ function setCookie(res, value, maxAge) {
 async function currentUser(req) {
   const token = cookies(req)[cookieName];
   if (!token || !/^[a-f0-9]{64}$/.test(token)) return null;
-  const [[user]] = await pool.execute("SELECT u.id,u.customer_key,u.name,u.email,u.phone,u.role,u.identity_status FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>NOW() AND (u.role!='customer' OR u.identity_status='verified')", [sha256(token)]);
-  return user || null;
+  const [[user]] = await pool.execute('SELECT u.id,u.customer_key,u.name,u.email,u.phone,u.role,u.identity_status FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND s.expires_at>NOW()', [sha256(token)]);
+  if (!user) return null;
+  const [renewed] = await pool.execute('UPDATE sessions SET expires_at=DATE_ADD(NOW(), INTERVAL 30 MINUTE) WHERE token_hash=? AND expires_at>NOW()', [sha256(token)]);
+  if (!renewed.affectedRows) {
+    const [[stillValid]] = await pool.execute('SELECT 1 AS valid FROM sessions WHERE token_hash=? AND expires_at>NOW()', [sha256(token)]);
+    if (!stillValid) return null;
+  }
+  return user;
 }
 const requireUser = route(async (req, res, next) => {
   req.user = await currentUser(req);
@@ -91,37 +98,26 @@ async function logAccess(req, action, targetType, targetId = null) {
   await pool.execute('INSERT INTO access_logs (actor_user_id,action,target_type,target_id,ip_address) VALUES (?,?,?,?,?)', [req.user.id, action, targetType, targetId, req.ip]);
 }
 
-// An account is created only by the signed identity callback.
+// Accounts can be created before identity verification. Their status remains not_started.
 app.post('/api/auth/register', limited, route(async (req, res) => {
   const name = clean(req.body.name, 80), email = clean(req.body.email, 190).toLowerCase();
   const phone = clean(req.body.phone, 30), password = req.body.password;
-  if (!name || !validEmail(email) || !/^[0-9+()\-\s]{8,30}$/.test(phone) || typeof password !== 'string' || password.length < 12 || password.length > 128 ||
+  if (!name || !validEmail(email) || !/^[0-9+()\-\s]{8,30}$/.test(phone) ||
       req.body.termsConsent !== true || req.body.privacyConsent !== true || req.body.outsourcingConsent !== true) {
-    return res.status(400).json({ error: '입력값과 필수 동의 항목을 확인해 주세요. 비밀번호는 12자 이상이어야 합니다.' });
+    return res.status(400).json({ error: '입력값과 필수 동의 항목을 확인해 주세요.' });
   }
-  if (!approvedPartnerUrl(process.env.IJINFO_VERIFY_URL) || !process.env.IJINFO_API_KEY || !process.env.IJINFO_CALLBACK_SECRET) {
-    return res.status(503).json({ error: '본인확인 수탁사 연동 설정이 필요합니다. 회원 계정은 생성되지 않았습니다.' });
-  }
+  const issues = passwordIssues(password);
+  if (issues.length) return res.status(400).json({ error: `비밀번호 조건: ${issues.join(', ')}` });
   const [[existing]] = await pool.execute('SELECT id FROM users WHERE email=?', [email]);
   if (existing) return res.status(409).json({ error: '이미 가입된 이메일입니다.' });
-  const [[pending]] = await pool.execute("SELECT id FROM signup_requests WHERE email=? AND status='pending' AND expires_at>NOW() ORDER BY id DESC LIMIT 1", [email]);
-  if (pending) return res.status(409).json({ error: '진행 중인 본인확인 요청이 있습니다.' });
   const passwordHash = await bcrypt.hash(password, 12);
-  const [insert] = await pool.execute("INSERT INTO signup_requests (name,email,phone,password_hash,consent_version,expires_at) VALUES (?,?,?,?,?,DATE_ADD(NOW(), INTERVAL 1 DAY))", [name, email, phone, passwordHash, 'draft-1']);
   try {
-    const response = await fetch(process.env.IJINFO_VERIFY_URL, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${process.env.IJINFO_API_KEY}` },
-      body: JSON.stringify({ requestId: insert.insertId, name, phone, callbackUrl: `${origin}/api/identity/callback` }),
-      signal: AbortSignal.timeout(8000)
-    });
-    if (!response.ok) throw new Error('provider');
-    const data = await response.json();
-    if (typeof data.verificationUrl !== 'string' || !approvedPartnerUrl(data.verificationUrl) || typeof data.reference !== 'string' || !data.reference) throw new Error('provider');
-    await pool.execute('UPDATE signup_requests SET provider_reference=? WHERE id=?', [data.reference.slice(0, 190), insert.insertId]);
-    res.status(202).json({ verificationUrl: data.verificationUrl, requestId: insert.insertId });
-  } catch {
-    await pool.execute("DELETE FROM signup_requests WHERE id=? AND status='pending'", [insert.insertId]);
-    res.status(502).json({ error: '본인확인 연결에 실패했습니다. 계정은 생성되지 않았습니다.' });
+    const [insert] = await pool.execute("INSERT INTO users (customer_key,name,email,phone,password_hash,identity_status,consent_version,terms_consented_at,privacy_consented_at,outsourcing_consented_at) VALUES (?,?,?,?,?,'not_started',?,NOW(),NOW(),NOW())", [publicKey(), name, email, phone, passwordHash, 'draft-1']);
+    await login(res, insert.insertId);
+    res.status(201).json({ user: await currentUserById(insert.insertId) });
+  } catch (error) {
+    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: '이미 가입된 이메일입니다.' });
+    throw error;
   }
 }));
 app.post('/api/identity/callback', route(async (req, res) => {
@@ -154,9 +150,10 @@ async function expireSignupRequests() {
   await pool.execute("UPDATE signup_requests SET status='expired',password_hash='' WHERE status='pending' AND expires_at<=NOW()");
 }
 setInterval(() => expireSignupRequests().catch(error => console.error('signup expiry:', error.message)), 60 * 60 * 1000).unref();
+setInterval(() => pool.execute('DELETE FROM sessions WHERE expires_at<=NOW()').catch(error => console.error('session expiry:', error.message)), 60 * 60 * 1000).unref();
 async function login(res, userId) {
   const token = crypto.randomBytes(32).toString('hex');
-  await pool.execute('INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,DATE_ADD(NOW(), INTERVAL 7 DAY))', [sha256(token), userId]);
+  await pool.execute('INSERT INTO sessions (token_hash,user_id,expires_at) VALUES (?,?,DATE_ADD(NOW(), INTERVAL 30 MINUTE))', [sha256(token), userId]);
   setCookie(res, token, 7 * 24 * 60 * 60 * 1000);
 }
 function unknownFailureCount(email) {
@@ -204,7 +201,6 @@ app.post('/api/auth/login', limited, route(async (req, res) => {
     const attempts = recordUnknownFailure(email);
     return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', captchaRequired: captchaNeeded(attempts) });
   }
-  if (user.role === 'customer' && user.identity_status !== 'verified') return res.status(403).json({ error: '본인확인 완료 후 로그인할 수 있습니다.' });
   if (user.is_locked) return res.status(423).json({ error: '로그인 실패 5회로 계정이 30분 동안 잠겼습니다.' });
   if (user.locked_until) await pool.execute('UPDATE users SET failed_login_attempts=0,locked_until=NULL WHERE id=?', [user.id]);
   if (!await captchaGate(req, res, user.locked_until ? 0 : user.failed_login_attempts)) return;
@@ -243,18 +239,32 @@ app.get('/api/public-config', (_req, res) => {
 });
 app.post('/api/tickets', requireUser, role('customer'), route(async (req, res) => {
   const type = req.body.type, subject = clean(req.body.subject, 160), description = clean(req.body.description, 3000);
+  const category = clean(req.body.category, 40), requestId = clean(req.body.requestId, 36).toLowerCase();
   const preferredTime = clean(req.body.preferredTime, 100), recordingConsent = type === 'phone' && req.body.recordingConsent === true;
-  if (!['consultation', 'phone'].includes(type) || subject.length < 3 || description.length < 10 || (type === 'phone' && !preferredTime)) return res.status(400).json({ error: '상담 내용을 확인해 주세요.' });
+  if (!['consultation', 'phone'].includes(type) || !['market', 'account', 'service', 'other'].includes(category) ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestId) ||
+      subject.length < 3 || description.length < 10 || (type === 'phone' && !preferredTime)) return res.status(400).json({ error: '상담 내용을 확인해 주세요.' });
+  const [[existing]] = await pool.execute('SELECT receipt_number,partner_status FROM tickets WHERE user_id=? AND client_request_id=?', [req.user.id, requestId]);
+  if (existing) return res.json({ receiptNumber: existing.receipt_number, partnerStatus: existing.partner_status });
   const receipt = receiptNumber();
-  const [insert] = await pool.execute('INSERT INTO tickets (receipt_number,user_id,type,subject,description,preferred_time,recording_consent) VALUES (?,?,?,?,?,?,?)', [receipt, req.user.id, type, subject, description, preferredTime || null, recordingConsent]);
-  const event = { event: 'ticket.created', receiptNumber: receipt, customerKey: req.user.customer_key, name: req.user.name, type, subject, description };
+  let insert;
+  try {
+    [insert] = await pool.execute('INSERT INTO tickets (receipt_number,user_id,type,category,client_request_id,subject,description,preferred_time,recording_consent) VALUES (?,?,?,?,?,?,?,?,?)', [receipt, req.user.id, type, category, requestId, subject, description, preferredTime || null, recordingConsent]);
+  } catch (error) {
+    if (error.code !== 'ER_DUP_ENTRY') throw error;
+    const [[duplicate]] = await pool.execute('SELECT receipt_number,partner_status FROM tickets WHERE user_id=? AND client_request_id=?', [req.user.id, requestId]);
+    if (duplicate) return res.json({ receiptNumber: duplicate.receipt_number, partnerStatus: duplicate.partner_status });
+    return res.status(409).json({ error: '이미 사용된 요청번호입니다.' });
+  }
+  const event = { event: 'ticket.created', receiptNumber: receipt, customerKey: req.user.customer_key, type, category };
   if (type === 'phone') { event.phone = req.user.phone; event.preferredTime = preferredTime; event.recordingConsent = recordingConsent; }
+  else { event.subject = subject; event.description = description; }
   const partnerStatus = await forwardToMk(process.env.MK_WEBHOOK_URL, event);
   await pool.execute('UPDATE tickets SET partner_status=? WHERE id=?', [partnerStatus, insert.insertId]);
   res.status(201).json({ receiptNumber: receipt, partnerStatus });
 }));
 app.get('/api/tickets', requireUser, role('customer'), route(async (req, res) => {
-  const [tickets] = await pool.execute('SELECT receipt_number,type,subject,status,partner_status,assignment_kind,recording_consent,created_at FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 100', [req.user.id]);
+  const [tickets] = await pool.execute('SELECT receipt_number,type,category,subject,status,partner_status,assignment_kind,recording_consent,created_at FROM tickets WHERE user_id=? ORDER BY id DESC LIMIT 100', [req.user.id]);
   res.json({ tickets });
 }));
 app.post('/api/partner/status-callback', route(async (req, res) => {
@@ -273,7 +283,7 @@ app.post('/api/chat', requireUser, role('customer'), route(async (req, res) => {
   const body = clean(req.body.body, 2000);
   if (!body) return res.status(400).json({ error: '메시지를 입력해 주세요.' });
   const [insert] = await pool.execute("INSERT INTO chat_messages (user_id,sender,body) VALUES (?,'customer',?)", [req.user.id, body]);
-  const partnerStatus = await forwardToMk(process.env.MK_CHAT_WEBHOOK_URL, { event: 'chat.message', customerKey: req.user.customer_key, name: req.user.name, messageId: insert.insertId, body });
+  const partnerStatus = await forwardToMk(process.env.MK_CHAT_WEBHOOK_URL, { event: 'chat.message', customerKey: req.user.customer_key, messageId: insert.insertId, body });
   await pool.execute('UPDATE chat_messages SET partner_status=? WHERE id=?', [partnerStatus, insert.insertId]);
   res.status(201).json({ partnerStatus });
 }));
@@ -373,6 +383,25 @@ app.get('/api/admin/overview', requireUser, role('admin'), route(async (req, res
   await logAccess(req, 'view', 'admin_overview');
   const [accessLogs] = await pool.execute('SELECT action,target_type,target_id,created_at FROM access_logs WHERE actor_user_id=? ORDER BY id DESC LIMIT 10', [req.user.id]);
   res.json({ users, tickets, members: members.map(u => ({ ...u, name: maskName(u.name), email: maskEmail(u.email), phone: maskPhone(u.phone) })), signups: signups.map(s => ({ ...s, name: maskName(s.name), email: maskEmail(s.email) })), recent, accessLogs });
+}));
+app.get('/api/admin/search', requireUser, role('admin'), route(async (req, res) => {
+  const kind = req.query.kind, key = clean(req.query.key, 80);
+  if (!['member', 'signup', 'ticket'].includes(kind) || !key) return res.status(400).json({ error: '조회 종류와 번호를 확인해 주세요.' });
+  let record;
+  if (kind === 'member') {
+    if (!/^[A-Za-z0-9-]{1,32}$/.test(key)) return res.status(400).json({ error: '회원번호 형식을 확인해 주세요.' });
+    [[record]] = await pool.execute("SELECT customer_key,name,email,phone,identity_status,created_at FROM users WHERE role='customer' AND customer_key=?", [key]);
+    if (record) record = { ...record, name: maskName(record.name), email: maskEmail(record.email), phone: maskPhone(record.phone) };
+  } else if (kind === 'signup') {
+    if (!/^\d{1,20}$/.test(key)) return res.status(400).json({ error: '가입 신청번호 형식을 확인해 주세요.' });
+    [[record]] = await pool.execute('SELECT id,name,email,status,created_at,completed_at FROM signup_requests WHERE id=?', [key]);
+    if (record) record = { ...record, name: maskName(record.name), email: maskEmail(record.email) };
+  } else {
+    if (!/^[A-Z0-9-]{1,32}$/.test(key)) return res.status(400).json({ error: '접수번호 형식을 확인해 주세요.' });
+    [[record]] = await pool.execute('SELECT t.receipt_number,t.type,t.category,t.status,t.partner_status,t.partner_reference,t.created_at,u.customer_key FROM tickets t JOIN users u ON u.id=t.user_id WHERE t.receipt_number=?', [key]);
+  }
+  await logAccess(req, 'search', `admin_${kind}`);
+  res.json({ kind, record: record || null });
 }));
 app.get('/api/admin/export', requireUser, role('admin'), route(async (req, res) => {
   const [rows] = await pool.execute("SELECT customer_key,name,email,phone,identity_status,created_at FROM users WHERE role='customer' ORDER BY id DESC LIMIT 1000");
