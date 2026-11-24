@@ -244,7 +244,7 @@ app.get('/api/public-config', (_req, res) => {
 app.post('/api/tickets', requireUser, role('customer'), route(async (req, res) => {
   const type = req.body.type, subject = clean(req.body.subject, 160), description = clean(req.body.description, 3000);
   const preferredTime = clean(req.body.preferredTime, 100), recordingConsent = type === 'phone' && req.body.recordingConsent === true;
-  if (!['consultation', 'reentry', 'phone'].includes(type) || subject.length < 3 || description.length < 10 || (type === 'phone' && !preferredTime)) return res.status(400).json({ error: '상담 내용을 확인해 주세요.' });
+  if (!['consultation', 'phone'].includes(type) || subject.length < 3 || description.length < 10 || (type === 'phone' && !preferredTime)) return res.status(400).json({ error: '상담 내용을 확인해 주세요.' });
   const receipt = receiptNumber();
   const [insert] = await pool.execute('INSERT INTO tickets (receipt_number,user_id,type,subject,description,preferred_time,recording_consent) VALUES (?,?,?,?,?,?,?)', [receipt, req.user.id, type, subject, description, preferredTime || null, recordingConsent]);
   const event = { event: 'ticket.created', receiptNumber: receipt, customerKey: req.user.customer_key, name: req.user.name, type, subject, description };
