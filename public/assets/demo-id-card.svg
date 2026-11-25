@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 540" role="img" aria-label="가상 인물 장민지의 실습용 증표">
+  <defs><linearGradient id="paper" x2="1" y2="1"><stop stop-color="#fff7eb"/><stop offset="1" stop-color="#f7d7ad"/></linearGradient></defs>
+  <rect x="4" y="4" width="852" height="532" rx="30" fill="url(#paper)" stroke="#e4ae76" stroke-width="8"/>
+  <text x="48" y="86" font-family="sans-serif" font-size="32" font-weight="700" fill="#342c28">RKX 실습용 가상 신분증</text>
+  <text x="48" y="125" font-family="sans-serif" font-size="22" fill="#9b5d38">실제 신분증이 아닙니다 · SAMPLE ONLY</text>
+  <rect x="568" y="160" width="230" height="286" rx="10" fill="#e8b08b"/>
+  <path d="M580 446c11-78 49-109 103-109s93 31 104 109" fill="#d66b45"/>
+  <ellipse cx="683" cy="272" rx="67" ry="86" fill="#edbd9d"/>
+  <path d="M616 269c-8-78 28-118 70-118 53 0 77 42 65 121-18-21-30-48-36-70-25 31-61 39-99 67" fill="#3b2c2c"/>
+  <circle cx="658" cy="285" r="4" fill="#403030"/><circle cx="711" cy="285" r="4" fill="#403030"/>
+  <path d="M664 333q20 13 41 0" fill="none" stroke="#a35b59" stroke-width="5"/>
+  <text x="48" y="235" font-family="sans-serif" font-size="46" font-weight="700" fill="#342c28">장민지</text>
+  <text x="48" y="295" font-family="sans-serif" font-size="28" fill="#4a3d35">주민등록번호 660119-2******</text>
+  <text x="48" y="345" font-family="sans-serif" font-size="26" fill="#4a3d35">발급일 2021-05-25</text>
+  <text x="48" y="462" font-family="sans-serif" font-size="24" fill="#a1572a">IJ-info 샘플 인물 01</text>
+  <text x="430" y="498" text-anchor="middle" font-family="sans-serif" font-size="90" font-weight="800" fill="#d75938" opacity=".28" transform="rotate(-17 430 498)">DEMO · 무효</text>
+</svg>

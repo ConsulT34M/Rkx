@@ -5,9 +5,11 @@ import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { captchaNeeded, createCaptcha, validCaptchaId, verifyCaptchaAnswer } from './captcha.js';
-import { passwordIssues } from './auth-policy.js';
+import { mountSignupRoutes } from './signup-routes.js';
+import { mountIdentityRoutes } from './identity-routes.js';
 
 const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -19,6 +21,26 @@ const pool = mysql.createPool({
   connectionLimit: 10, charset: 'utf8mb4'
 });
 const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
+const port = Number(process.env.PORT || 3000);
+const allowedOrigins = new Set([new URL(origin).origin]);
+for (const configured of (process.env.APP_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)) {
+  const url = new URL(configured);
+  if (url.username || url.password || url.pathname !== '/' || url.search || url.hash ||
+      (process.env.NODE_ENV === 'production' && url.protocol !== 'https:')) throw new Error('APP_ALLOWED_ORIGINS 설정이 올바르지 않습니다.');
+  allowedOrigins.add(url.origin);
+}
+if (process.env.NODE_ENV !== 'production') {
+  allowedOrigins.add(`http://localhost:${port}`);
+  allowedOrigins.add(`http://127.0.0.1:${port}`);
+  for (const addresses of Object.values(os.networkInterfaces())) {
+    for (const address of addresses || []) {
+      if (address.family === 'IPv4' && !address.internal &&
+          (/^10\./.test(address.address) || /^192\.168\./.test(address.address) || /^172\.(1[6-9]|2\d|3[01])\./.test(address.address))) {
+        allowedOrigins.add(`http://${address.address}:${port}`);
+      }
+    }
+  }
+}
 const cookieName = 'rkx_session';
 const recentAttempts = new Map();
 const recentCaptchaRequests = new Map();
@@ -36,7 +58,6 @@ const route = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catc
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
 const validEmail = value => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) && value.length <= 190;
-const publicKey = () => `RKX${crypto.randomBytes(10).toString('hex').toUpperCase()}`;
 const receiptNumber = () => `RKX-${new Date().toISOString().slice(0, 10).replaceAll('-', '')}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
 function approvedPartnerUrl(value) {
   try {
@@ -54,12 +75,13 @@ app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
+app.use('/api/identity', express.json({ limit: '7mb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
 app.use(express.json({ limit: '64kb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
-const callbackPaths = new Set(['/identity/callback', '/partner/status-callback', '/partner/chat-callback']);
+const callbackPaths = new Set(['/identity/callback', '/identity/ijinfo-callback', '/partner/status-callback', '/partner/chat-callback']);
 app.use('/api', (req, res, next) => {
   if (['POST', 'PATCH', 'PUT', 'DELETE'].includes(req.method) && !callbackPaths.has(req.path)) {
     const sentOrigin = req.get('origin');
-    if (sentOrigin && sentOrigin !== origin) return res.status(403).json({ error: '요청 출처가 올바르지 않습니다.' });
+    if (sentOrigin && !allowedOrigins.has(sentOrigin)) return res.status(403).json({ error: '요청 출처가 올바르지 않습니다.' });
     if (!sentOrigin && req.get('sec-fetch-site') === 'cross-site') return res.status(403).json({ error: '요청 출처가 올바르지 않습니다.' });
   }
   next();
@@ -89,9 +111,14 @@ const requireUser = route(async (req, res, next) => {
 });
 const role = expected => (req, res, next) => req.user.role === expected ? next() : res.status(403).json({ error: '접근 권한이 없습니다.' });
 function limited(req, res, next) {
-  const key = req.ip, now = Date.now();
+  // 로그인 시도와 회원가입의 각 인증 단계를 같은 IP 한도에 합산하지 않는다.
+  const key = `${req.ip}:${req.path}`, now = Date.now();
   const attempts = (recentAttempts.get(key) || []).filter(time => now - time < 15 * 60 * 1000);
-  if (attempts.length >= 20) return res.status(429).json({ error: '잠시 후 다시 시도해 주세요.' });
+  if (attempts.length >= 20) {
+    const retryAfter = Math.max(1, Math.ceil((15 * 60 * 1000 - (now - attempts[0])) / 1000));
+    res.setHeader('Retry-After', String(retryAfter));
+    return res.status(429).json({ error: `요청이 많아 ${Math.ceil(retryAfter / 60)}분 후 다시 시도할 수 있습니다.` });
+  }
   attempts.push(now); recentAttempts.set(key, attempts); next();
 }
 function limitedCaptcha(req, res, next) {
@@ -113,56 +140,12 @@ async function logAccess(req, action, targetType, targetId = null) {
   await pool.execute('INSERT INTO access_logs (actor_user_id,action,target_type,target_id,ip_address) VALUES (?,?,?,?,?)', [req.user.id, action, targetType, targetId, req.ip]);
 }
 
-// Accounts can be created before identity verification. Their status remains not_started.
-app.post('/api/auth/register', limited, route(async (req, res) => {
-  const name = clean(req.body.name, 80), email = clean(req.body.email, 190).toLowerCase();
-  const phone = clean(req.body.phone, 30), password = req.body.password;
-  if (!name || !validEmail(email) || !/^[0-9+()\-\s]{8,30}$/.test(phone) ||
-      req.body.termsConsent !== true || req.body.privacyConsent !== true || req.body.outsourcingConsent !== true) {
-    return res.status(400).json({ error: '입력값과 필수 동의 항목을 확인해 주세요.' });
-  }
-  const issues = passwordIssues(password);
-  if (issues.length) return res.status(400).json({ error: `비밀번호 조건: ${issues.join(', ')}` });
-  const [[existing]] = await pool.execute('SELECT id FROM users WHERE email=?', [email]);
-  if (existing) return res.status(409).json({ error: '이미 가입된 이메일입니다.' });
-  const passwordHash = await bcrypt.hash(password, 12);
-  try {
-    const [insert] = await pool.execute("INSERT INTO users (customer_key,name,email,phone,password_hash,identity_status,consent_version,terms_consented_at,privacy_consented_at,outsourcing_consented_at) VALUES (?,?,?,?,?,'not_started',?,NOW(),NOW(),NOW())", [publicKey(), name, email, phone, passwordHash, 'draft-1']);
-    await login(res, insert.insertId);
-    res.status(201).json({ user: await currentUserById(insert.insertId) });
-  } catch (error) {
-    if (error.code === 'ER_DUP_ENTRY') return res.status(409).json({ error: '이미 가입된 이메일입니다.' });
-    throw error;
-  }
-}));
-app.post('/api/identity/callback', route(async (req, res) => {
-  if (!signed(req, process.env.IJINFO_CALLBACK_SECRET)) return res.status(401).end();
-  const { reference, status } = req.body;
-  if (typeof reference !== 'string' || !['verified', 'rejected'].includes(status)) return res.status(400).end();
-  const connection = await pool.getConnection();
-  try {
-    await connection.beginTransaction();
-    const [[request]] = await connection.execute('SELECT *,expires_at<=NOW() AS expired FROM signup_requests WHERE provider_reference=? FOR UPDATE', [reference]);
-    if (!request) { await connection.rollback(); return res.status(404).end(); }
-    if (request.status !== 'pending') { await connection.commit(); return res.json({ ok: true }); }
-    if (request.expired) {
-      await connection.execute("UPDATE signup_requests SET status='expired',password_hash='',completed_at=NOW() WHERE id=?", [request.id]);
-      await connection.commit(); return res.status(410).end();
-    }
-    if (status === 'verified') {
-      const [[existing]] = await connection.execute('SELECT id FROM users WHERE email=?', [request.email]);
-      if (existing) { await connection.execute("UPDATE signup_requests SET status='rejected',password_hash='',completed_at=NOW() WHERE id=?", [request.id]); }
-      else {
-        await connection.execute("INSERT INTO users (customer_key,name,email,phone,password_hash,identity_status) VALUES (?,?,?,?,?,'verified')", [publicKey(), request.name, request.email, request.phone, request.password_hash]);
-        await connection.execute("UPDATE signup_requests SET status='verified',password_hash='',completed_at=NOW() WHERE id=?", [request.id]);
-      }
-    } else await connection.execute("UPDATE signup_requests SET status='rejected',password_hash='',completed_at=NOW() WHERE id=?", [request.id]);
-    await connection.commit(); res.json({ ok: true });
-  } catch (error) { await connection.rollback(); throw error; }
-  finally { connection.release(); }
-}));
+mountIdentityRoutes(app, { pool, requireUser, role, route, limited });
+
+mountSignupRoutes(app, { pool, route, limited });
+
 async function expireSignupRequests() {
-  await pool.execute("UPDATE signup_requests SET status='expired',password_hash='' WHERE status='pending' AND expires_at<=NOW()");
+  await pool.execute("UPDATE signup_requests SET status='expired',password_hash='',token_hash=NULL,code_hash=NULL,completed_at=NOW() WHERE status='pending' AND expires_at<=NOW()");
 }
 setInterval(() => expireSignupRequests().catch(error => console.error('signup expiry:', error.message)), 60 * 60 * 1000).unref();
 setInterval(() => pool.execute('DELETE FROM sessions WHERE expires_at<=NOW()').catch(error => console.error('session expiry:', error.message)), 60 * 60 * 1000).unref();
@@ -278,6 +261,7 @@ app.post('/api/tickets', requireUser, role('customer'), route(async (req, res) =
   if (!['consultation', 'phone'].includes(type) || !['market', 'account', 'service', 'other'].includes(category) ||
       !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(requestId) ||
       subject.length < 3 || description.length < 10 || (type === 'phone' && !preferredTime)) return res.status(400).json({ error: '상담 내용을 확인해 주세요.' });
+  if (type === 'phone' && !req.user.phone) return res.status(400).json({ error: '전화 상담은 본인확인 화면에서 연락처를 먼저 등록해 주세요.' });
   const [[existing]] = await pool.execute('SELECT receipt_number,partner_status FROM tickets WHERE user_id=? AND client_request_id=?', [req.user.id, requestId]);
   if (existing) return res.json({ receiptNumber: existing.receipt_number, partnerStatus: existing.partner_status });
   const receipt = receiptNumber();
@@ -406,7 +390,7 @@ setInterval(() => purgeExpiredRecordings().catch(error => console.error('recordi
 
 function maskName(value) { return value.length <= 1 ? '*' : `${value[0]}${'*'.repeat(Math.min(value.length - 1, 3))}`; }
 function maskEmail(value) { const [local, domain] = value.split('@'); return `${local.slice(0, 2)}***@${domain}`; }
-function maskPhone(value) { return value.replace(/\d(?=\d{4})/g, '*'); }
+function maskPhone(value) { return value ? value.replace(/\d(?=\d{4})/g, '*') : '미등록'; }
 app.get('/api/admin/overview', requireUser, role('admin'), route(async (req, res) => {
   await expireSignupRequests();
   const [[users]] = await pool.execute("SELECT COUNT(*) total FROM users WHERE role='customer'");
@@ -532,4 +516,4 @@ app.use((error, _req, res, _next) => {
   console.error(error);
   res.status(error.type === 'entity.too.large' ? 413 : 500).json({ error: error.type === 'entity.too.large' ? '파일 크기가 제한을 초과했습니다.' : '서버 오류가 발생했습니다.' });
 });
-app.listen(Number(process.env.PORT || 3000), () => console.log(`RKX running at ${origin}`));
+app.listen(port, () => console.log(`RKX running at ${origin}`));

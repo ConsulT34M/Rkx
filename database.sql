@@ -6,10 +6,10 @@ CREATE TABLE IF NOT EXISTS users (
   customer_key VARCHAR(32) UNIQUE,
   name VARCHAR(80) NOT NULL,
   email VARCHAR(190) NOT NULL UNIQUE,
-  phone VARCHAR(30) NOT NULL,
+  phone VARCHAR(30) NULL,
   password_hash VARCHAR(255) NOT NULL,
   role ENUM('customer','admin','partner') NOT NULL DEFAULT 'customer',
-  identity_status ENUM('not_started','pending','verified','rejected') NOT NULL DEFAULT 'not_started',
+  identity_status ENUM('not_started','pending','demo_verified','verified','rejected') NOT NULL DEFAULT 'not_started',
   consent_version VARCHAR(40) NULL,
   terms_consented_at DATETIME NULL,
   privacy_consented_at DATETIME NULL,
@@ -22,16 +22,39 @@ CREATE TABLE IF NOT EXISTS signup_requests (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(80) NOT NULL,
   email VARCHAR(190) NOT NULL,
-  phone VARCHAR(30) NOT NULL,
+  phone VARCHAR(30) NULL,
   password_hash VARCHAR(255) NOT NULL,
   consent_version VARCHAR(40) NOT NULL,
+  token_hash CHAR(64) NULL UNIQUE,
+  client_user_ref VARCHAR(100) NULL UNIQUE,
   provider_reference VARCHAR(190) UNIQUE,
   status ENUM('pending','verified','rejected','expired') NOT NULL DEFAULT 'pending',
+  mode ENUM('demo','ijinfo') NULL,
+  stage ENUM('intro','phone','phone_code','id_card','face','completed','failed') NOT NULL DEFAULT 'intro',
+  code_hash CHAR(129) NULL,
+  code_expires_at DATETIME NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   expires_at DATETIME NOT NULL,
   completed_at DATETIME NULL,
   INDEX (email, status),
   INDEX (created_at)
+);
+
+CREATE TABLE IF NOT EXISTS identity_verifications (
+  user_id BIGINT UNSIGNED PRIMARY KEY,
+  client_user_ref VARCHAR(100) NOT NULL UNIQUE,
+  provider_reference VARCHAR(100) NULL UNIQUE,
+  mode ENUM('demo','ijinfo') NOT NULL,
+  stage ENUM('phone','phone_code','id_card','face','completed','failed') NOT NULL DEFAULT 'phone',
+  sample_person_no TINYINT UNSIGNED NOT NULL DEFAULT 1,
+  pending_phone VARCHAR(30) NULL,
+  code_hash CHAR(129) NULL,
+  code_expires_at DATETIME NULL,
+  expires_at DATETIME NOT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  INDEX (stage, expires_at)
 );
 
 CREATE TABLE IF NOT EXISTS sessions (
