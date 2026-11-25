@@ -22,10 +22,17 @@ async function api(url, options = {}) {
   return data;
 }
 const allowedViews = ['home', 'market', 'consult', 'process', 'privacy', 'terms', 'admin', 'partner'];
+function resetTicketDraft() {
+  $('#ticketForm').reset();
+  setTicketType('consultation');
+  $('#recordingToggle').setAttribute('aria-pressed', 'false');
+  $('#recordingToggle').textContent = '녹취 요청 안 함';
+}
 function showView(view, { updateHistory = true } = {}) {
   if (!allowedViews.includes(view)) return;
   if (view === 'admin' && state.user?.role !== 'admin') return toast('관리자만 이용할 수 있습니다.');
   if (view === 'partner' && state.user?.role !== 'partner') return toast('수탁사 담당자만 이용할 수 있습니다.');
+  if (state.view === 'consult' && view !== 'consult') resetTicketDraft();
   state.view = view;
   $$('.view').forEach(el => el.classList.toggle('active', el.id === `view-${view}`));
   $('.main-nav').classList.remove('open'); $('#menuButton').setAttribute('aria-expanded', 'false');
