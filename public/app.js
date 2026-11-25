@@ -97,8 +97,9 @@ async function submitAuth(form, mode) {
     if (missing.length) { $('#authFeedback').textContent = `비밀번호 조건: ${missing.join(', ')}`; return; }
   }
   if (mode === 'login' && window.rkxCaptcha.isRequired()) {
-    payload.captchaToken = window.rkxCaptcha.response();
-    if (!payload.captchaToken) { $('#authFeedback').textContent = '로봇 확인을 완료해 주세요.'; return; }
+    const captcha = window.rkxCaptcha.response();
+    if (!captcha) { $('#authFeedback').textContent = '이미지의 문자를 입력해 주세요.'; return; }
+    Object.assign(payload, captcha);
   }
   try {
     const result = await api(`/api/auth/${mode}`, { method: 'POST', body: JSON.stringify(payload) });
@@ -110,9 +111,8 @@ async function submitAuth(form, mode) {
     if (!$('#chatPanel').classList.contains('hidden')) loadChat();
   } catch (error) {
     if (mode === 'login') {
-      if (payload.captchaToken) window.rkxCaptcha.reset();
+      if (payload.captchaId) window.rkxCaptcha.reset();
       if (error.captchaRequired) window.rkxCaptcha.show();
-      else if (error.status === 423) window.rkxCaptcha.hide();
     }
     $('#authFeedback').textContent = error.message;
   }
@@ -158,8 +158,8 @@ async function loadTickets() {
 }
 async function loadPublicConfig() {
   try {
-    const { partnerPhone, recaptchaSiteKey } = await api('/api/public-config');
-    window.rkxCaptcha.configure(recaptchaSiteKey);
+    const { partnerPhone, captchaAvailable } = await api('/api/public-config');
+    window.rkxCaptcha.configure(captchaAvailable);
     if (partnerPhone) {
       state.partnerPhone = partnerPhone;
       $('#samplePhone').classList.add('hidden');
@@ -251,6 +251,7 @@ async function uploadRecording(ticketId) {
 }
 
 document.addEventListener('click', event => {
+  if (event.target.closest('[data-chat-open]')) { event.preventDefault(); openChat(); return; }
   const view = event.target.closest('[data-view]'); if (view) { event.preventDefault(); showView(view.dataset.view); return; }
   const modal = event.target.closest('[data-modal]'); if (modal) { openAuth(modal.dataset.modal); return; }
   const authTab = event.target.closest('[data-auth]'); if (authTab) { openAuth(authTab.dataset.auth); return; }

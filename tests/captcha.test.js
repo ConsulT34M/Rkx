@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { captchaNeeded, verifyCaptchaToken } from '../captcha.js';
+import { captchaNeeded, createCaptcha, verifyCaptchaAnswer } from '../captcha.js';
+
+const id = '94acb21a-adae-4842-9f6d-abb8790d6f5c';
+const baseUrl = 'https://captcha.example/api/v1.0';
 
 test('CAPTCHA starts after the second failed login', () => {
   assert.equal(captchaNeeded(0), false);
@@ -9,30 +12,26 @@ test('CAPTCHA starts after the second failed login', () => {
   assert.equal(captchaNeeded(5), true);
 });
 
-test('Google token verification uses POST and checks the site hostname', async () => {
+test('CERN API challenge contains only a valid image and ID', async () => {
   const fetchImpl = async (url, options) => {
-    assert.equal(url, 'https://www.google.com/recaptcha/api/siteverify');
-    assert.equal(options.method, 'POST');
-    assert.equal(options.body.get('secret'), 'server-secret');
-    assert.equal(options.body.get('response'), 'browser-token');
-    return { ok: true, json: async () => ({ success: true, hostname: 'localhost' }) };
+    assert.equal(url, `${baseUrl}/captcha`);
+    assert.equal(options.headers.Accept, 'application/json');
+    return { ok: true, json: async () => ({ id, img: 'data:image/jpeg;base64,/9j/4AA=' }) };
   };
-  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'localhost', fetchImpl }), true);
-  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'example.com', fetchImpl }), false);
+  assert.deepEqual(await createCaptcha({ baseUrl, fetchImpl }), { id, img: 'data:image/jpeg;base64,/9j/4AA=' });
+  await assert.rejects(createCaptcha({ baseUrl, fetchImpl: async () => ({ ok: true, json: async () => ({ id, img: 'javascript:alert(1)' }) }) }));
 });
 
-test('Google public test key works only for local development hosts', async () => {
-  const secret = '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe';
-  const fetchImpl = async () => ({ ok: true, json: async () => ({ success: true, hostname: 'testkey.google.com' }) });
-  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret, hostname: 'localhost', fetchImpl }), true);
-  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret, hostname: 'example.com', fetchImpl }), false);
-  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'localhost', fetchImpl }), false);
-});
-
-test('missing, rejected, and provider-failed CAPTCHA tokens never pass', async () => {
-  const rejected = async () => ({ ok: true, json: async () => ({ success: false, hostname: 'localhost' }) });
-  const unavailable = async () => ({ ok: false });
-  assert.equal(await verifyCaptchaToken({ token: '', secret: 'server-secret', hostname: 'localhost', fetchImpl: rejected }), false);
-  assert.equal(await verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'localhost', fetchImpl: rejected }), false);
-  await assert.rejects(verifyCaptchaToken({ token: 'browser-token', secret: 'server-secret', hostname: 'localhost', fetchImpl: unavailable }));
+test('CERN API checks answers server-side and rejects expired or invalid challenges', async () => {
+  const valid = async (url, options) => {
+    assert.equal(url, `${baseUrl}/captcha`);
+    assert.equal(options.method, 'POST');
+    assert.deepEqual(JSON.parse(options.body), { id, answer: 'Ab12' });
+    return { status: 200, ok: true, json: async () => ({ message: 'Valid' }) };
+  };
+  assert.equal(await verifyCaptchaAnswer({ baseUrl, id, answer: 'Ab12', fetchImpl: valid }), true);
+  assert.equal(await verifyCaptchaAnswer({ baseUrl, id, answer: 'wrong', fetchImpl: async () => ({ status: 400 }) }), false);
+  assert.equal(await verifyCaptchaAnswer({ baseUrl, id, answer: 'expired', fetchImpl: async () => ({ status: 404 }) }), false);
+  assert.equal(await verifyCaptchaAnswer({ baseUrl, id: 'bad-id', answer: 'Ab12', fetchImpl: valid }), false);
+  await assert.rejects(verifyCaptchaAnswer({ baseUrl, id, answer: 'Ab12', fetchImpl: async () => ({ status: 503, ok: false }) }));
 });

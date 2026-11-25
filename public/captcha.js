@@ -2,62 +2,89 @@ window.rkxCaptcha = (() => {
   const storageKey = 'rkx-captcha-required';
   const panel = document.querySelector('#captchaChallenge');
   const message = document.querySelector('#captchaMessage');
-  let siteKey = null;
-  let widgetId = null;
+  const image = document.querySelector('#captchaImage');
+  const answer = document.querySelector('#captchaAnswer');
+  const audio = document.querySelector('#captchaAudio');
+  let available = false;
+  let challengeId = null;
+  let issuedAt = 0;
   let required = sessionStorage.getItem(storageKey) === '1';
-  let loading = null;
+  let generation = 0;
+  let pending = null;
 
-  function loadScript() {
-    if (window.grecaptcha?.render) return Promise.resolve();
-    if (loading) return loading;
-    loading = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error('CAPTCHA 연결 시간이 초과되었습니다.')), 10000);
-      window.rkxRecaptchaReady = () => { clearTimeout(timer); resolve(); };
-      const script = document.createElement('script');
-      script.src = 'https://www.google.com/recaptcha/api.js?onload=rkxRecaptchaReady&render=explicit&hl=ko';
-      script.async = true;
-      script.defer = true;
-      script.onerror = () => { clearTimeout(timer); reject(new Error('CAPTCHA 화면을 불러오지 못했습니다.')); };
-      document.head.append(script);
-    }).catch(error => { loading = null; throw error; });
-    return loading;
+  function clearChallenge() {
+    challengeId = null;
+    issuedAt = 0;
+    image.removeAttribute('src');
+    image.classList.add('hidden');
+    answer.value = '';
+    audio.pause();
+    audio.removeAttribute('src');
+    audio.classList.add('hidden');
+  }
+
+  function loadChallenge() {
+    if (pending) return pending;
+    const current = ++generation;
+    clearChallenge();
+    message.textContent = '인증 이미지를 불러오는 중입니다.';
+    pending = (async () => {
+      try {
+        const response = await fetch('/api/captcha', { credentials: 'same-origin', cache: 'no-store' });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '인증 이미지를 불러오지 못했습니다.');
+        if (current !== generation || !required) return;
+        challengeId = data.id;
+        issuedAt = Date.now();
+        image.src = data.img;
+        image.classList.remove('hidden');
+        message.textContent = '이미지의 문자를 입력해 주세요. 60초 동안 유효합니다.';
+      } catch (error) {
+        if (current === generation && required) message.textContent = error.message;
+      }
+    })().finally(() => { if (current === generation) pending = null; });
+    return pending;
   }
 
   function show() {
     required = true;
     sessionStorage.setItem(storageKey, '1');
     panel.classList.remove('hidden');
-    if (!siteKey) {
-      message.textContent = 'CAPTCHA 키가 설정되지 않았습니다. 관리자에게 문의해 주세요.';
+    if (!available) {
+      message.textContent = 'CAPTCHA API가 설정되지 않았습니다. 관리자에게 문의해 주세요.';
       return;
     }
-    message.textContent = '로그인 실패가 2회 발생했습니다. 로봇 확인을 완료해 주세요.';
-    loadScript().then(() => {
-      if (required && document.querySelector('#authDialog').open && widgetId === null) {
-        widgetId = window.grecaptcha.render('recaptchaWidget', {
-          sitekey: siteKey,
-          theme: 'light',
-          size: window.innerWidth < 380 ? 'compact' : 'normal'
-        });
-      }
-    }).catch(error => { message.textContent = error.message; });
+    if (challengeId && Date.now() - issuedAt >= 55000) reset();
+    else if (!challengeId && !pending) loadChallenge();
   }
 
   function hide() {
     required = false;
     sessionStorage.removeItem(storageKey);
     panel.classList.add('hidden');
-    reset();
+    generation++;
+    pending = null;
+    clearChallenge();
   }
   function reset() {
-    if (widgetId !== null && window.grecaptcha?.reset) window.grecaptcha.reset(widgetId);
+    generation++;
+    pending = null;
+    clearChallenge();
+    if (required && available) loadChallenge();
   }
   function response() {
-    return required && widgetId !== null ? window.grecaptcha?.getResponse(widgetId) || '' : '';
+    const value = answer.value.trim();
+    return required && challengeId && value ? { captchaId: challengeId, captchaAnswer: value } : null;
   }
-  function configure(key) {
-    siteKey = typeof key === 'string' && key ? key : null;
+  function configure(isAvailable) {
+    available = isAvailable === true;
     if (required) show();
   }
+  document.querySelector('#captchaRefresh').addEventListener('click', reset);
+  document.querySelector('#captchaAudioButton').addEventListener('click', () => {
+    if (!challengeId) return;
+    audio.src = `/api/captcha/audio/${challengeId}`;
+    audio.classList.remove('hidden');
+  });
   return { configure, show, hide, reset, response, isRequired: () => required };
 })();

@@ -1,5 +1,10 @@
 .captcha-challenge{padding:14px;margin:0 0 17px;border:1px solid #f2d4ba;border-radius:9px;background:#fff8f2}
 .captcha-challenge p{margin:0 0 12px;color:#8b4b1b;font-size:12px;line-height:1.5}
-.captcha-challenge #recaptchaWidget{min-height:0}
+.captcha-image-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.captcha-image-row img{max-width:100%;height:auto;border:1px solid #e5d8cb;border-radius:6px;background:#fff}
+.captcha-tools{display:flex;flex-direction:column;gap:7px}
+.captcha-tools button{border:1px solid #d8bba3;border-radius:6px;background:#fff;color:#914b17;padding:7px 10px;font-size:11px;font-weight:700}
+.captcha-challenge audio{display:block;width:100%;height:34px;margin-top:10px}
+.captcha-challenge label{display:block;margin:12px 0 0!important;color:#70431e;font-size:12px}
+.captcha-challenge input{display:block;width:100%;margin-top:6px;border:1px solid #dfc7b3;border-radius:7px;background:#fff;padding:10px 12px;font-size:14px;letter-spacing:.12em}
 .captcha-challenge small{display:block;margin-top:10px;color:#7f8790;font-size:10px;line-height:1.4}
-.captcha-challenge a{color:#c85e12;text-decoration:underline}

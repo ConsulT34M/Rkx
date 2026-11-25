@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { captchaNeeded, verifyCaptchaToken } from './captcha.js';
+import { captchaNeeded, createCaptcha, validCaptchaId, verifyCaptchaAnswer } from './captcha.js';
 import { passwordIssues } from './auth-policy.js';
 
 const app = express();
@@ -21,16 +21,17 @@ const pool = mysql.createPool({
 const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
 const cookieName = 'rkx_session';
 const recentAttempts = new Map();
+const recentCaptchaRequests = new Map();
 const unknownLoginFailures = new Map();
 const marketCache = new Map();
-const captchaSiteKey = process.env.RECAPTCHA_SITE_KEY?.trim() || '';
-const captchaSecretKey = process.env.RECAPTCHA_SECRET_KEY?.trim() || '';
-if (process.env.NODE_ENV === 'production' &&
-    (captchaSiteKey === '6LeIxAcTAAAAAJcZVRqyHh71UMIEGNQ_MXjiZKhI' ||
-     captchaSecretKey === '6LeIxAcTAAAAAGG-vFI1TnRWxMZNFuojJ4WifJWe')) {
-  throw new Error('Google reCAPTCHA 테스트 키는 운영 환경에서 사용할 수 없습니다.');
+const captchaApiUrl = (process.env.CERN_CAPTCHA_API_URL || '').trim().replace(/\/+$/, '');
+if (captchaApiUrl) {
+  const url = new URL(captchaApiUrl);
+  if (url.username || url.password || url.search || url.hash ||
+      !(url.protocol === 'https:' || (url.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(url.hostname)))) {
+    throw new Error('CERN_CAPTCHA_API_URL은 HTTPS 또는 로컬 HTTP 주소여야 합니다.');
+  }
 }
-const captchaConfigured = Boolean(captchaSiteKey && captchaSecretKey);
 const route = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const sha256 = value => crypto.createHash('sha256').update(value).digest('hex');
 const clean = (value, max) => typeof value === 'string' ? value.trim().slice(0, max) : '';
@@ -49,7 +50,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self' https://www.google.com/recaptcha/; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self' https://www.google.com/recaptcha/ https://www.gstatic.com/recaptcha/; frame-src https://www.google.com/recaptcha/ https://recaptcha.google.com/recaptcha/; base-uri 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'");
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
@@ -92,6 +93,15 @@ function limited(req, res, next) {
   const attempts = (recentAttempts.get(key) || []).filter(time => now - time < 15 * 60 * 1000);
   if (attempts.length >= 20) return res.status(429).json({ error: '잠시 후 다시 시도해 주세요.' });
   attempts.push(now); recentAttempts.set(key, attempts); next();
+}
+function limitedCaptcha(req, res, next) {
+  const key = req.ip, now = Date.now();
+  const requests = (recentCaptchaRequests.get(key) || []).filter(time => now - time < 15 * 60 * 1000);
+  if (requests.length >= 60) return res.status(429).json({ error: 'CAPTCHA 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' });
+  requests.push(now);
+  recentCaptchaRequests.set(key, requests);
+  if (recentCaptchaRequests.size > 5000) recentCaptchaRequests.delete(recentCaptchaRequests.keys().next().value);
+  next();
 }
 function signed(req, secret) {
   const signature = req.get('x-rkx-signature') || '';
@@ -175,23 +185,24 @@ function recordUnknownFailure(email) {
     }
     if (unknownLoginFailures.size > 5000) unknownLoginFailures.delete(unknownLoginFailures.keys().next().value);
   }
-  unknownLoginFailures.set(sha256(email), { count: Math.min(5, unknownFailureCount(email) + 1), at: Date.now() });
+  unknownLoginFailures.set(sha256(email), { count: Math.min(2, unknownFailureCount(email) + 1), at: Date.now() });
   return unknownFailureCount(email);
 }
 async function captchaGate(req, res, attempts) {
   if (!captchaNeeded(attempts)) return true;
-  if (!captchaConfigured) {
+  if (!captchaApiUrl) {
     res.status(503).json({ error: 'CAPTCHA 설정이 필요합니다. 관리자에게 문의해 주세요.', captchaRequired: true });
     return false;
   }
-  if (!req.body.captchaToken) {
-    res.status(403).json({ error: '로봇 확인을 완료해 주세요.', captchaRequired: true });
+  const id = clean(req.body.captchaId, 36), answer = clean(req.body.captchaAnswer, 16);
+  if (!validCaptchaId(id) || !answer) {
+    res.status(403).json({ error: '이미지의 문자를 입력해 주세요.', captchaRequired: true });
     return false;
   }
   try {
-    const verified = await verifyCaptchaToken({ token: req.body.captchaToken, secret: captchaSecretKey, hostname: new URL(origin).hostname });
+    const verified = await verifyCaptchaAnswer({ baseUrl: captchaApiUrl, id, answer });
     if (verified) return true;
-    res.status(403).json({ error: '로봇 확인에 실패했습니다. 다시 시도해 주세요.', captchaRequired: true });
+    res.status(403).json({ error: '문자가 틀렸거나 유효시간이 지났습니다. 새 이미지로 다시 시도해 주세요.', captchaRequired: true });
   } catch {
     res.status(502).json({ error: 'CAPTCHA 검증 서비스에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.', captchaRequired: true });
   }
@@ -200,21 +211,19 @@ async function captchaGate(req, res, attempts) {
 app.post('/api/auth/login', limited, route(async (req, res) => {
   const email = clean(req.body.email, 190).toLowerCase(), password = req.body.password;
   if (!validEmail(email) || typeof password !== 'string') return res.status(400).json({ error: '아이디와 비밀번호를 확인해 주세요.' });
-  const [[user]] = await pool.execute('SELECT id,password_hash,role,identity_status,failed_login_attempts,locked_until,locked_until>NOW() AS is_locked FROM users WHERE email=?', [email]);
+  const [[user]] = await pool.execute('SELECT id,password_hash,failed_login_attempts FROM users WHERE email=?', [email]);
   if (!user) {
     if (!await captchaGate(req, res, unknownFailureCount(email))) return;
     const attempts = recordUnknownFailure(email);
     return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', captchaRequired: captchaNeeded(attempts) });
   }
-  if (user.is_locked) return res.status(423).json({ error: '로그인 실패 5회로 계정이 30분 동안 잠겼습니다.' });
-  if (user.locked_until) await pool.execute('UPDATE users SET failed_login_attempts=0,locked_until=NULL WHERE id=?', [user.id]);
-  if (!await captchaGate(req, res, user.locked_until ? 0 : user.failed_login_attempts)) return;
+  if (!await captchaGate(req, res, user.failed_login_attempts)) return;
   if (!await bcrypt.compare(password, user.password_hash)) {
-    await pool.execute('UPDATE users SET failed_login_attempts=LEAST(failed_login_attempts+1,5),locked_until=IF(failed_login_attempts+1>=5,DATE_ADD(NOW(),INTERVAL 30 MINUTE),NULL) WHERE id=?', [user.id]);
-    const [[updated]] = await pool.execute('SELECT failed_login_attempts,locked_until FROM users WHERE id=?', [user.id]);
-    return res.status(updated.locked_until ? 423 : 401).json({ error: updated.locked_until ? '로그인 실패 5회로 계정이 30분 동안 잠겼습니다.' : '아이디 또는 비밀번호가 올바르지 않습니다.', captchaRequired: !updated.locked_until && captchaNeeded(updated.failed_login_attempts) });
+    await pool.execute('UPDATE users SET failed_login_attempts=LEAST(failed_login_attempts+1,2) WHERE id=?', [user.id]);
+    const [[updated]] = await pool.execute('SELECT failed_login_attempts FROM users WHERE id=?', [user.id]);
+    return res.status(401).json({ error: '아이디 또는 비밀번호가 올바르지 않습니다.', captchaRequired: captchaNeeded(updated.failed_login_attempts) });
   }
-  await pool.execute('UPDATE users SET failed_login_attempts=0,locked_until=NULL WHERE id=?', [user.id]);
+  await pool.execute('UPDATE users SET failed_login_attempts=0 WHERE id=?', [user.id]);
   await login(res, user.id);
   res.json({ user: await currentUserById(user.id) });
 }));
@@ -240,8 +249,28 @@ async function forwardToMk(url, body) {
 }
 app.get('/api/public-config', (_req, res) => {
   const phone = process.env.MK_PHONE_NUMBER || '';
-  res.json({ partnerPhone: /^[0-9+\-]{8,20}$/.test(phone) ? phone : null, recaptchaSiteKey: captchaConfigured ? captchaSiteKey : null });
+  res.json({ partnerPhone: /^[0-9+\-]{8,20}$/.test(phone) ? phone : null, captchaAvailable: Boolean(captchaApiUrl) });
 });
+app.get('/api/captcha', limitedCaptcha, route(async (_req, res) => {
+  if (!captchaApiUrl) return res.status(503).json({ error: 'CAPTCHA 설정이 필요합니다.' });
+  try {
+    res.json(await createCaptcha({ baseUrl: captchaApiUrl }));
+  } catch {
+    res.status(502).json({ error: 'CAPTCHA 이미지를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.' });
+  }
+}));
+app.get('/api/captcha/audio/:id', limitedCaptcha, route(async (req, res) => {
+  if (!captchaApiUrl) return res.status(503).end();
+  if (!validCaptchaId(req.params.id)) return res.status(400).end();
+  try {
+    const response = await fetch(`${captchaApiUrl}/captcha/audio/${req.params.id}`, { signal: AbortSignal.timeout(6000) });
+    if (response.status === 404) return res.status(404).end();
+    if (!response.ok || Number(response.headers.get('content-length') || 0) > 1000000) return res.status(502).end();
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > 1000000) return res.status(502).end();
+    res.type('audio/mpeg').send(bytes);
+  } catch { res.status(502).end(); }
+}));
 app.post('/api/tickets', requireUser, role('customer'), route(async (req, res) => {
   const type = req.body.type, subject = clean(req.body.subject, 160), description = clean(req.body.description, 3000);
   const category = clean(req.body.category, 40), requestId = clean(req.body.requestId, 36).toLowerCase();

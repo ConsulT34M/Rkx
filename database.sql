@@ -15,7 +15,6 @@ CREATE TABLE IF NOT EXISTS users (
   privacy_consented_at DATETIME NULL,
   outsourcing_consented_at DATETIME NULL,
   failed_login_attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
-  locked_until DATETIME NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
