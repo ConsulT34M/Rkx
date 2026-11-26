@@ -12,6 +12,7 @@
   <link rel="stylesheet" href="/market.css">
   <link rel="stylesheet" href="/captcha.css">
   <link rel="stylesheet" href="/identity.css">
+  <link rel="stylesheet" href="/support.css">
   <script src="/market.js" defer></script>
   <script src="/captcha.js" defer></script>
   <script src="/identity.js" defer></script>
@@ -19,6 +20,7 @@
   <script src="/auth.js" defer></script>
   <script src="/consult.js" defer></script>
   <script src="/chat.js" defer></script>
+  <script src="/support.js" defer></script>
   <script src="/admin.js" defer></script>
   <script src="/partner.js" defer></script>
   <script src="/app.js" defer></script>
@@ -122,7 +124,34 @@
     <div class="footer-partners"><strong>PARTNER NETWORK</strong><span>(주)인증정보평가 · IJ-info</span><span>(주)말결 · MK</span><strong>고객지원</strong><span>고객센터 02-1234-5678</span><span>평일 09:00~18:00</span></div>
   </div><div class="wrap footer-bottom"><span>© RKX. All rights reserved.</span></div></footer>
 
-  <button class="chat-launcher" id="chatLauncher" aria-label="채팅 상담 열기"><span>✦</span><span>상담 채팅</span></button>
+  <div id="supportDock" class="support-dock">
+    <button type="button" class="chat-launcher support-launcher" id="chatLauncher" aria-label="상담 채널 선택" aria-expanded="false" aria-controls="supportMenu">
+      <svg aria-hidden="true" viewBox="0 0 32 32" width="34" height="34"><use href="/support-icons.svg#agent"></use></svg>
+    </button>
+    <div id="supportMenu" class="support-menu" role="group" aria-label="상담 채널" hidden>
+      <button type="button" data-channel="ai"><svg aria-hidden="true"><use href="/support-icons.svg#spark"></use></svg><span>AI 채팅 상담</span><small></small></button>
+      <button type="button" data-channel="agent"><svg aria-hidden="true"><use href="/support-icons.svg#chat"></use></svg><span>상담원 채팅 문의</span></button>
+      <button type="button" data-channel="voice"><svg aria-hidden="true"><use href="/support-icons.svg#phone"></use></svg><span>전화 상담</span><small></small></button>
+    </div>
+  </div>
+  <section class="chat-panel hidden" id="aiChatPanel" aria-labelledby="aiChatTitle">
+    <div class="chat-header"><div><strong id="aiChatTitle">AI 채팅 상담</strong><span>질문은 OpenAI에 전달되고 대화는 말결에 저장됩니다.</span></div>
+      <button id="aiChatClose" aria-label="AI 채팅 닫기">×</button></div>
+    <div class="chat-messages" id="aiMessages" role="log" aria-label="AI 대화"></div>
+    <div class="ai-chat-tools"><span id="aiChatStatus" role="status"></span><button type="button" id="aiChatNew">새 대화</button></div>
+    <form id="aiChatForm" class="chat-form"><input name="body" maxlength="2000" placeholder="질문을 입력하세요" aria-label="AI 채팅 메시지" required><button type="submit">전송</button></form>
+  </section>
+  <dialog id="voice-dialog" class="support-voice" aria-labelledby="voice-title" data-session-url="/api/support/voice/sessions" data-processor-url="/api/support/assets/voice-pcm.js" data-report-connection>
+    <form method="dialog"><button class="dialog-close" aria-label="전화 상담 닫기">×</button></form>
+    <svg class="voice-mark" aria-hidden="true"><use href="/support-icons.svg#phone"></use></svg>
+    <h2 id="voice-title">전화 상담</h2><p>AI 상담원과 음성으로 대화합니다. 시작하면 마이크 음성이 OpenAI에 전달됩니다.</p>
+    <label><input id="voice-consent" type="checkbox" aria-describedby="voice-retention"> 통화 녹취와 AI 요약에 동의합니다 (선택)</label>
+    <small id="voice-retention">동의하면 말결에서 녹취를 저장하고 OpenAI로 요약합니다. 관리자와 담당 상담원이 확인하며, 삭제 또는 동의 철회 시까지 보관합니다.</small>
+    <p id="voice-state" role="status">시작 버튼을 누르고 마이크 사용을 허용해 주세요.</p>
+    <p id="voice-recording-state" role="status" hidden></p><p id="voice-ticket" role="status" hidden></p>
+    <audio id="voice-ringback" src="/api/support/assets/ringback" preload="none" loop hidden></audio><audio id="voice-audio" autoplay controls hidden aria-label="AI 답변 재생"></audio>
+    <button class="button button-orange" id="voice-start" type="button" disabled>음성 상담 시작</button><button class="button button-dark" id="voice-stop" type="button" hidden>통화 종료</button>
+  </dialog>
   <section class="chat-panel hidden" id="chatPanel" aria-label="상담 채팅"><div class="chat-header"><div><strong>말결 연계 상담 채팅</strong><span><i class="live-dot"></i><output id="chatStatus">메시지를 남겨주세요</output></span></div><button id="closeChat" aria-label="채팅 닫기">×</button></div><div class="chat-messages" id="chatMessages"><div class="chat-empty">로그인 후 상담원과 채팅을 시작할 수 있습니다.</div></div><form id="chatForm" class="chat-form"><input name="body" maxlength="2000" placeholder="메시지를 입력하세요" aria-label="채팅 메시지"><button type="submit">전송</button></form></section>
 
   <dialog id="authDialog" class="auth-dialog"><button class="dialog-close" id="closeAuth" aria-label="닫기">×</button><div class="auth-brand">R<span>K</span>X</div><div class="auth-tabs"><button class="active" data-auth="login">로그인</button><button data-auth="register">회원가입</button></div><form id="loginForm" class="auth-form"><h2>다시 만나서 반갑습니다</h2><p>RKX 계정으로 상담을 이어가세요.</p><label>이메일<input type="email" name="email" required autocomplete="email" placeholder="example@email.com"></label><label>비밀번호<input type="password" name="password" required autocomplete="current-password" placeholder="비밀번호 입력"></label><div id="captchaChallenge" class="captcha-challenge hidden"><p id="captchaMessage" role="status"></p><div class="captcha-image-row"><img id="captchaImage" class="hidden" alt="자동입력 방지 문자 이미지"><div class="captcha-tools"><button id="captchaRefresh" type="button">새 이미지</button><button id="captchaAudioButton" type="button">음성 듣기</button></div></div><audio id="captchaAudio" class="hidden" controls aria-label="자동입력 방지 문자 음성"></audio><label>이미지의 문자<input id="captchaAnswer" name="captchaAnswer" type="text" maxlength="16" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="문자를 입력해 주세요"></label><small>CERN captcha-api 기반 · 문자는 60초 동안 유효합니다.</small></div><button class="button button-orange" type="submit">로그인</button></form><form id="registerForm" class="auth-form hidden" autocomplete="off"><h2>RKX 시작하기</h2><p>이름·이메일·비밀번호를 입력하고 다음으로 이동하세요. 본인확인이 완료된 후 계정이 생성됩니다.</p><label>이름<input name="name" required maxlength="80" autocomplete="off" placeholder="이름 입력"></label><label>이메일<input type="email" name="email" required autocomplete="off" placeholder="example@email.com"></label><label>비밀번호<input type="password" name="password" minlength="8" maxlength="128" required autocomplete="new-password" placeholder="8자 이상 입력"><small class="password-hint">8자 이상 · 영문 대문자 · 영문 소문자 · 특수기호를 각각 포함해 주세요.</small></label><label class="check-row"><input type="checkbox" name="termsConsent" required><span>서비스 이용약관에 동의합니다. <button type="button" id="openTermsFromAuth">약관 보기</button></span></label><label class="check-row"><input type="checkbox" name="privacyConsent" required><span>개인정보 수집·이용에 동의합니다. <button type="button" id="openPolicyFromAuth">처리방침 보기</button></span></label><label class="check-row"><input type="checkbox" name="outsourcingConsent" required><span>말결 상담 처리위탁 고지를 확인했습니다.</span></label><button class="button button-orange" type="submit">다음으로</button></form><p class="form-feedback" id="authFeedback" role="status"></p></dialog>

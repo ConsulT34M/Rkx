@@ -29,6 +29,7 @@ async function submitAuth(form, mode) {
     else if (state.user.role === 'partner') showView('partner');
     else if (state.view === 'consult') loadTickets();
     if (!$('#chatPanel').classList.contains('hidden')) loadChat();
+    supportResume();
   } catch (error) {
     if (mode === 'login') {
       if (payload.captchaId) window.rkxCaptcha.reset();
@@ -38,6 +39,7 @@ async function submitAuth(form, mode) {
   }
 }
 async function logout() {
+  supportReset();
   try { await api('/api/auth/logout', { method: 'POST', body: '{}' }); } catch {}
   state.user = null; state.partnerChatUser = null; renderHeader(); renderIdentity(); closeChat(); showView('home');
   $('#chatMessages').innerHTML = '<div class="chat-empty">로그인 후 상담원과 채팅을 시작할 수 있습니다.</div>';

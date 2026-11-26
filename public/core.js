@@ -16,6 +16,9 @@ function toast(message) {
   clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('show'), 3500);
 }
 async function api(url, options = {}) {
+  if (options.body && Object.getPrototypeOf(options.body) === Object.prototype) {
+    options = { ...options, body: JSON.stringify(options.body) };
+  }
   const response = await fetch(url, { credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, ...options });
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw Object.assign(new Error(data.error || '요청에 실패했습니다.'), { status: response.status, captchaRequired: data.captchaRequired === true });
@@ -65,7 +68,8 @@ function renderHeader() {
   const target = $('#headerActions');
   if (!state.user) target.innerHTML = '<button class="text-button" data-modal="login">로그인</button><button class="button button-dark small" data-modal="register">회원가입</button>';
   else target.innerHTML = `<span class="welcome-name">${escapeHtml(state.user.name)}님</span>${state.user.role === 'admin' ? '<button class="text-button" data-view="admin">관리자</button>' : ''}${state.user.role === 'partner' ? '<button class="text-button" data-view="partner">말결 화면</button>' : ''}<button class="text-button" id="logoutButton">로그아웃</button>`;
-  $('#chatLauncher').classList.toggle('hidden', !!state.user && state.user.role !== 'customer');
+  const panelOpen = !$('#chatPanel').classList.contains('hidden') || !$('#aiChatPanel').classList.contains('hidden');
+  $('#chatLauncher').classList.toggle('hidden', panelOpen || (!!state.user && state.user.role !== 'customer'));
   renderPhone();
 }
 function renderPhone() {
@@ -84,6 +88,7 @@ async function refreshUser() {
   lastSessionTouch = Date.now();
   renderHeader(); renderIdentity();
   if (previousUser && !state.user) {
+    supportReset();
     closeChat();
     if (['admin', 'partner'].includes(state.view)) showView('home');
     toast('세션이 만료되었습니다. 다시 로그인해 주세요.');

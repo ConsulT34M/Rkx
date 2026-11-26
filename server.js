@@ -11,6 +11,7 @@ import { captchaNeeded, createCaptcha, validCaptchaId, verifyCaptchaAnswer } fro
 import { mountSignupRoutes } from './signup-routes.js';
 import { mountIdentityRoutes } from './identity-routes.js';
 import { createMkChat, isUuid, MkChatError } from './mk-chat.js';
+import { supportRoutes } from './support-routes.js';
 
 const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -73,7 +74,7 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' data:; media-src 'self'; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'");
+  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'");
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
@@ -115,6 +116,7 @@ const requireUser = route(async (req, res, next) => {
   next();
 });
 const role = expected => (req, res, next) => req.user.role === expected ? next() : res.status(403).json({ error: '접근 권한이 없습니다.' });
+app.use('/api/support', requireUser, role('customer'), supportRoutes(mkChat, route));
 function limited(req, res, next) {
   // 로그인 시도와 회원가입의 각 인증 단계를 같은 IP 한도에 합산하지 않는다.
   const key = `${req.ip}:${req.path}`, now = Date.now();

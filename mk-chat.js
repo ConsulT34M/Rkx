@@ -15,34 +15,41 @@ export class MkChatError extends Error {
 
 function mkRequest(base, ca, localDocker) {
   const transport = base.protocol === 'https:' ? https : http;
-  return (path, headers, payload) => new Promise((resolve, reject) => {
+  return (path, headers, payload, { binary = false, timeout = 8000, support = false } = {}) => new Promise((resolve, reject) => {
     const request = transport.request(new URL(path, base), {
       method: payload === undefined ? 'GET' : 'POST',
       headers: { 'Content-Type': 'application/json', ...headers },
       ca, servername: localDocker ? 'localhost' : undefined,
-      signal: AbortSignal.timeout(8000)
+      signal: AbortSignal.timeout(timeout)
     }, response => {
-      let raw = '';
-      response.setEncoding('utf8');
-      response.on('data', chunk => { raw += chunk; });
+      const chunks = [];
+      response.on('data', chunk => chunks.push(chunk));
       response.on('error', () => reject(new MkChatError()));
       response.on('end', () => {
-        let data;
-        try { data = JSON.parse(raw); } catch { return reject(new MkChatError()); }
+        const raw = Buffer.concat(chunks);
+        const ok = response.statusCode >= 200 && response.statusCode < 300;
+        let data = null;
+        if (raw.length) {
+          if (ok && binary) data = raw;
+          else try { data = JSON.parse(raw.toString('utf8')); } catch { return reject(new MkChatError()); }
+        }
         if (response.statusCode < 200 || response.statusCode >= 300) {
           const messages = {
             CASE_READ_ONLY: '종료된 상담입니다. 새 상담을 시작해 주세요.',
             REQUEST_KEY_CONFLICT: '이미 다른 내용으로 전송한 메시지입니다.',
             MESSAGE_REMOVED: '삭제된 메시지입니다.'
           };
+          if (support && data?.message && data.code !== 'CLIENT_AUTH_REQUIRED') {
+            return reject(new MkChatError(data.message, response.statusCode, data.code));
+          }
           const message = messages[data?.code];
           return reject(new MkChatError(message, message ? 409 : 502, data?.code));
         }
-        resolve({ data, cookies: response.headers['set-cookie'] || [] });
+        resolve({ data, status: response.statusCode, cookies: response.headers['set-cookie'] || [] });
       });
     });
     request.on('error', () => reject(new MkChatError()));
-    request.end(payload === undefined ? undefined : JSON.stringify(payload));
+    request.end(payload === undefined || Buffer.isBuffer(payload) ? payload : JSON.stringify(payload));
   });
 }
 
@@ -66,13 +73,18 @@ export function createMkChat(pool, env = process.env) {
     return room;
   }
 
-  async function roomFor(userId) {
+  async function identityFor(userId) {
     let room = await storedRoom(userId);
     if (!room) {
       await pool.execute('INSERT INTO mk_chat_rooms (user_id,subject_ref,intake_id) VALUES (?,?,?) ON DUPLICATE KEY UPDATE user_id=user_id',
         [userId, randomUUID(), randomUUID()]);
       room = await storedRoom(userId);
     }
+    return room;
+  }
+
+  async function roomFor(userId) {
+    const room = await identityFor(userId);
     if (room.case_id) return room;
     // Concurrent opens and retries after a lost response use the same MK intake ID.
     let data;
@@ -141,6 +153,13 @@ export function createMkChat(pool, env = process.env) {
   }
 
   return {
+    asset(path) { return request(path, {}, undefined, { binary: true }); },
+    availability() { return request('/partner/ai-chat/availability', partner, undefined, { support: true }); },
+    async support(userId, path, payload, headers = {}) {
+      const room = await identityFor(userId);
+      return request(path, { ...headers, ...partner, 'X-Support-Subject': room.subject_ref }, payload,
+        { support: true, timeout: 24000 });
+    },
     async read(userId) {
       const room = await storedRoom(userId);
       return room?.case_id ? history(room) : { caseId: null, readOnly: false, messages: [] };

@@ -44,6 +44,7 @@ async function loadChat() {
 }
 function openChat() {
   if (state.user && state.user.role !== 'customer') return toast('고객 계정에서 이용할 수 있습니다.');
+  supportReset();
   $('#chatPanel').classList.remove('hidden'); $('#chatLauncher').classList.add('hidden');
   loadChat();
   if (!state.user) openAuth('login');

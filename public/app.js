@@ -45,11 +45,11 @@ window.addEventListener('rkx-signup-complete', event => {
   lastSessionTouch = Date.now();
   renderHeader(); renderIdentity();
   if (!$('#chatPanel').classList.contains('hidden')) loadChat();
+  supportResume();
   toast('본인확인이 완료되어 계정이 생성되었습니다.');
 });
 window.addEventListener('rkx-identity-complete', refreshUser);
 window.addEventListener('rkx-identity-progress', refreshUser);
-$('#chatLauncher').addEventListener('click', openChat);
 $('#closeChat').addEventListener('click', closeChat);
 $('#chatForm').addEventListener('submit', submitChat);
 $('#recordingToggle').addEventListener('click', () => {
