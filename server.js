@@ -75,7 +75,10 @@ app.use((req, res, next) => {
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
-app.use('/api/identity', express.json({ limit: '7mb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
+// 본인확인 경로는 신분증·얼굴 이미지를 base64 로 싣는다. 가입 경로(/api/signup/identity)도
+// 같은 본문을 보내므로 같은 한도를 적용한다 — 전에는 아래 64kb 에 걸려 실제 사진이 413 이 났다.
+['/api/identity', '/api/signup/identity'].forEach(prefix =>
+  app.use(prefix, express.json({ limit: '7mb', verify: (req, _res, buffer) => { req.rawBody = buffer; } })));
 app.use(express.json({ limit: '64kb', verify: (req, _res, buffer) => { req.rawBody = buffer; } }));
 const callbackPaths = new Set(['/identity/callback', '/identity/ijinfo-callback', '/partner/status-callback', '/partner/chat-callback']);
 app.use('/api', (req, res, next) => {
