@@ -43,8 +43,17 @@ function showView(view, { updateHistory = true } = {}) {
   if (view === 'admin') loadAdmin();
   if (view === 'partner') loadPartner();
 }
+function clearRegisterForm() {
+  const form = $('#registerForm');
+  form.reset();
+  form.querySelectorAll('input').forEach(input => {
+    if (input.type === 'checkbox' || input.type === 'radio') input.checked = false;
+    else input.value = '';
+  });
+}
 function openAuth(mode = 'login') {
   if (mode === 'login') $('#loginForm').reset();
+  if (mode === 'register') clearRegisterForm();
   $$('.auth-tabs button').forEach(button => button.classList.toggle('active', button.dataset.auth === mode));
   $('#loginForm').classList.toggle('hidden', mode !== 'login');
   $('#registerForm').classList.toggle('hidden', mode !== 'register');

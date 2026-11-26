@@ -22,6 +22,7 @@
 .identity-dialog{width:min(1100px,96vw);max-width:1100px;max-height:94vh;overflow:hidden;background:#fffaf4}
 .identity-layout{display:grid;grid-template-columns:minmax(0,1fr) minmax(360px,440px);min-height:0;height:min(790px,94vh)}
 .identity-guide{overflow:auto;padding:48px 48px 30px;border-radius:26px 0 0 26px}
+.identity-guide{background:#fff}
 .identity-guide h3{font-size:28px;letter-spacing:-.045em;line-height:1.3;margin:0 0 13px}
 .identity-guide section>p{font-size:15px;line-height:1.7;color:#676a71;margin:0 0 18px}
 .identity-guide label:not(.identity-check){display:block;font-size:14px;font-weight:700;color:#3d424a;margin:16px 0}
@@ -49,3 +50,97 @@
 .identity-phone .identity-lock-screen>.identity-lock-notice{margin:auto 0 18px;text-align:center;color:#fff;font-size:11px;line-height:1.6;text-shadow:0 1px 5px #40375799}
 .identity-guide [data-identity-step][hidden],.identity-phone [data-identity-phone-step][hidden]{display:none}
 @media(max-width:800px){.identity-dialog{max-height:96vh;overflow:auto}.identity-layout{display:grid;grid-template-columns:1fr;height:auto}.identity-guide{overflow:visible;padding:28px;border-radius:24px 24px 0 0}.identity-guide h2{font-size:34px}.identity-guide>p,.identity-disclaimer{display:block!important}.identity-timeline{margin:22px 0}.identity-phone-shell{border-radius:0 0 24px 24px;padding:18px}.identity-phone{height:min(680px,75vh);min-height:480px}}
+
+/* 본인확인 단계에서 안내 패널과 휴대전화 패널을 분리한다. */
+.identity-dialog{width:min(1000px,92vw);max-width:1000px;max-height:94vh;overflow:visible;border-radius:0;background:transparent;box-shadow:none}
+.identity-layout{grid-template-columns:minmax(0,1fr) 350px;gap:2cm;height:min(790px,94vh)}
+.identity-guide{min-width:0;background:#fff;border-radius:24px;box-shadow:0 24px 70px #1115}
+.identity-phone-shell{border-radius:48px;box-shadow:0 0 0 1px #fff,0 0 8px 2px #ffffffe6,0 0 18px 4px #ffffff73,0 24px 70px #1115}
+@media(max-width:1000px) and (min-width:801px){
+  .identity-layout{grid-template-columns:minmax(0,1fr) minmax(300px,360px);gap:2cm}
+  .identity-guide{padding:34px}
+}
+@media(max-width:800px){
+  .identity-dialog{max-height:96vh;overflow:auto}
+  .identity-layout{grid-template-columns:1fr;gap:14px;height:auto}
+  .identity-guide{border-radius:24px}
+  .identity-phone-shell{border-radius:24px}
+}
+
+/* IJ-info 본인확인 센터의 휴대전화 영역 */
+.identity-phone-shell{padding:4px;background:#fff}
+.identity-phone{box-sizing:border-box;width:100%;height:100%;border:4px solid #303036;border-radius:44px;box-shadow:0 0 6px #ffffff99}
+.identity-island,.identity-phone-home{background:#303036}
+.identity-phone-progress span{background:#8abf48}
+.identity-step-count{color:#628f2d}
+.identity-phone-illustration{background:#f2fae9;color:#79aa3e;box-shadow:0 15px 35px #638f2d26}
+.identity-phone-illustration span{font-size:21px;letter-spacing:-.04em}
+.identity-phone input:focus{outline-color:#a8cf7a}
+.identity-phone .identity-primary,.identity-camera-box button:last-child{background:#79aa3e;border-color:#79aa3e}
+.identity-phone .identity-primary:hover,.identity-camera-box button:last-child:hover{background:#679733}
+.identity-phone .identity-result-icon{background:#e5f3d7;color:#628f2d}
+.identity-phone.is-lock-screen{background:radial-gradient(circle at 16% 15%,#f6ffe9 0,transparent 42%),radial-gradient(circle at 86% 80%,#d6efbb 0,transparent 45%),linear-gradient(150deg,#e8f7d7,#b8d996)}
+.identity-phone.is-lock-screen::before{background:linear-gradient(135deg,#f5ffe855,#e4f7ce88 48%,#abda8a55)}
+.identity-phone.is-lock-screen .identity-phone-top,.identity-lock-screen{color:#2c3c2a;text-shadow:none}
+.identity-phone.is-lock-screen .identity-phone-home{background:#2c3c2a}
+.identity-lock-camera{background:#82b94d}
+.identity-message-notification{box-shadow:0 7px 22px #47672c2c}
+.identity-message-notification #identityDemoCode{color:#628f2d}
+.identity-phone .identity-lock-screen>.identity-lock-notice{color:#2c3c2a;text-shadow:none}
+
+/* 휴대폰 확인부터 인증기관 IJ-info의 연두색 폼으로 전환한다. */
+.identity-dialog.is-provider-step .identity-guide{background:#fff;border:1px solid #e4e9e0}
+.identity-dialog.is-provider-step .identity-kicker,.identity-dialog.is-provider-step .identity-guide h2 em{color:#628f2d}
+.identity-dialog.is-provider-step .identity-timeline span.active{color:#628f2d;border-color:#8abf48}
+.identity-dialog.is-provider-step .identity-guide input:not([type=checkbox]){border-color:#c9dbb8;background:#fff}
+.identity-dialog.is-provider-step .identity-guide input:focus{outline-color:#a8cf7a}
+.identity-dialog.is-provider-step .identity-guide .identity-primary{background:#79aa3e}
+.identity-dialog.is-provider-step .identity-guide .identity-primary:hover{background:#679733}
+.identity-dialog.is-provider-step .identity-guide .identity-secondary{border-color:#89b856;color:#628f2d;background:#fff}
+.identity-dialog.is-provider-step .identity-guide .identity-result-icon{background:#e5f3d7;color:#628f2d}
+@media(max-width:800px){
+  .identity-phone{height:min(680px,75vh);min-height:480px}
+}
+
+/* 촬영 가이드는 미리보기 위에만 표시하고 저장되는 이미지에는 포함하지 않는다. */
+.identity-camera-view{position:relative;width:100%;margin:0;overflow:hidden;border-radius:10px;background:#222}
+.identity-camera-view video{display:block;border-radius:0}
+.identity-camera-guide{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;fill:none;stroke:#c9ff8c;stroke-width:3;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 3px #173321) drop-shadow(0 0 7px #b8ff74)}
+.identity-camera-guide-face,.identity-camera-guide-card{display:none}
+.identity-camera-view[data-target="face"] .identity-camera-guide-face,.identity-camera-view[data-target="id_card"] .identity-camera-guide-card{display:block}
+.identity-camera-guide-card rect{stroke-dasharray:11 9;stroke-width:2.5}
+.identity-camera-guide-card path{stroke-width:4}
+
+/* 작은 데스크톱 화면에서도 동의 항목과 진행 버튼을 한 화면에 배치한다. */
+.identity-brand-rkx{display:inline-block;color:#20232a;font-family:Arial,sans-serif;font-size:24px;font-weight:900;letter-spacing:-.09em;line-height:1}
+.identity-brand-rkx span{color:#f97316}
+.identity-guide .identity-check{line-height:1.5}
+.identity-guide .identity-check span{min-width:0}
+.identity-guide .identity-check strong,.identity-guide .identity-check small{display:block}
+.identity-guide .identity-check small{margin-top:5px;color:#6c737d;font-size:11px;font-weight:400;line-height:1.55}
+.identity-guide .identity-check-all{margin:4px 0 10px;padding:11px 0!important;font-weight:800}
+.identity-guide .identity-check-all input{width:18px;height:18px;flex:none}
+.identity-guide .identity-check-all strong{font-size:14px}
+@media(min-width:801px){
+  .identity-guide{padding:25px 34px 20px}
+  .identity-kicker{margin:0}
+  .identity-guide h2{font-size:34px;line-height:1.14;margin:8px 0 12px}
+  .identity-guide>p.identity-guide-copy{margin:0;font-size:13px;line-height:1.45}
+  .identity-timeline{margin:18px 0 20px}
+  .identity-timeline span{padding-top:7px;font-size:11px}
+  .identity-guide h3{font-size:22px;margin-bottom:6px}
+  .identity-guide section>p{font-size:13px;line-height:1.5;margin-bottom:8px}
+  .identity-guide .identity-check{padding:10px 0;font-size:13px;line-height:1.5}
+  .identity-guide .identity-primary{margin-top:14px;padding:12px;font-size:14px}
+}
+
+.identity-provider-logo{display:block;width:154px;height:42px;object-fit:cover;object-position:center}
+.identity-phone-header .identity-phone-logo{display:block;width:145px;height:38px;object-fit:cover;object-position:center}
+.identity-phone [data-identity-phone-step="intro"] .identity-phone-illustration{width:min(220px,100%);height:126px;margin:48px auto;background:#fff;box-shadow:0 15px 35px #466b2824}
+.identity-phone-illustration img{display:block;width:94%;height:78px;object-fit:cover}
+
+/* 필수 동의 단계에서는 RKX 동의 창만 보여 주고, 다음 단계부터 휴대전화를 연다. */
+.identity-dialog:not(.is-provider-step){width:min(450px,calc(100vw - 32px));max-width:450px;max-height:94vh;overflow-y:auto;overscroll-behavior:contain;border-radius:24px;background:#fff}
+.identity-dialog:not(.is-provider-step) .identity-layout{display:block;height:auto;min-height:0}
+.identity-dialog:not(.is-provider-step) .identity-guide{max-height:none;overflow:visible}
+.identity-dialog:not(.is-provider-step) .identity-phone-shell{display:none}

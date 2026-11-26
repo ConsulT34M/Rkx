@@ -1,0 +1,194 @@
+.app-promo-section {
+  padding: 34px 0 72px;
+  background: #fff;
+}
+
+.app-promo-banner {
+  min-height: 284px;
+  overflow: hidden;
+  border-radius: 22px;
+  background: #f4f6f8;
+  display: grid;
+  grid-template-columns: minmax(254px, 300px) minmax(0, 500px);
+  justify-content: center;
+  align-items: center;
+  gap: 36px;
+}
+
+.app-promo-phone {
+  width: 254px;
+  height: 375px;
+  margin: 54px auto -145px;
+  padding: 6px;
+  border: 5px solid #373b43;
+  border-radius: 38px;
+  background: #fff;
+  box-shadow: 0 14px 30px #1118271f;
+  transform: rotate(-2deg);
+}
+
+.app-promo-phone-screen {
+  height: 100%;
+  overflow: hidden;
+  border-radius: 27px;
+  background: #fff;
+  color: #262b33;
+  font-size: 11px;
+}
+
+.app-promo-phone-status,
+.app-promo-phone-top,
+.app-promo-phone-tabs,
+.app-promo-phone-filter,
+.app-promo-phone-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-promo-phone-status {
+  padding: 10px 15px 8px;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.app-promo-phone-top {
+  padding: 9px 14px 13px;
+  font-size: 14px;
+}
+
+.app-promo-phone-top strong {
+  color: #191c22;
+  font-size: 19px;
+  font-weight: 900;
+  letter-spacing: -.08em;
+}
+
+.app-promo-phone-top strong span {
+  color: #f97316;
+}
+
+.app-promo-phone-tabs {
+  padding: 0 14px 10px;
+  border-bottom: 1px solid #e9edf1;
+  color: #818a95;
+  font-weight: 700;
+}
+
+.app-promo-phone-tabs b {
+  color: #f97316;
+}
+
+.app-promo-phone-filter {
+  justify-content: flex-start;
+  gap: 23px;
+  padding: 13px 14px;
+  color: #808791;
+}
+
+.app-promo-phone-filter b {
+  color: #f97316;
+}
+
+.app-promo-phone-row {
+  min-height: 54px;
+  padding: 9px 14px;
+  border-top: 1px solid #edf0f3;
+  font-weight: 700;
+}
+
+.app-promo-phone-row div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.app-promo-phone-row small {
+  color: #949ca6;
+  font-size: 9px;
+  font-weight: 500;
+}
+
+.app-promo-up { color: #e45154; }
+.app-promo-down { color: #347ac4; }
+
+.app-promo-copy {
+  padding: 42px 52px 42px 0;
+}
+
+.app-promo-eyebrow {
+  color: #f97316;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+
+.app-promo-copy h2 {
+  margin: 12px 0 10px;
+  color: #1f2731;
+  font-size: clamp(22px, 2.25vw, 32px);
+  font-weight: 800;
+  line-height: 1.4;
+  letter-spacing: -.04em;
+}
+
+.app-promo-copy p {
+  margin: 0 0 20px;
+  color: #78818d;
+  font-size: 14px;
+}
+
+.app-promo-stores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.app-promo-store {
+  min-width: 142px;
+  height: 43px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  border-radius: 6px;
+  background: #3d424c;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: default;
+  user-select: none;
+}
+
+.app-promo-play { color: #70d372; font-size: 17px; }
+.app-promo-apple { color: #fff; font-size: 15px; }
+
+.home-section .section-top > div {
+  margin-left: 24px;
+}
+
+@media (max-width: 760px) {
+  .app-promo-banner {
+    min-height: 0;
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .app-promo-phone {
+    order: 2;
+    height: 340px;
+    margin: 15px auto -145px;
+  }
+
+  .app-promo-copy {
+    padding: 30px 24px 0;
+    text-align: center;
+  }
+
+  .app-promo-copy h2 { font-size: clamp(21px, 6vw, 28px); }
+  .app-promo-stores { justify-content: center; }
+
+  .home-section .section-top > div { margin-left: 12px; }
+
+  .app-promo-section { padding-bottom: 48px; }
+}

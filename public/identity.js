@@ -25,6 +25,9 @@
   function show(next) {
     stage = next;
     feedback();
+    root.classList.toggle('is-provider-step', next !== 'intro');
+    if (next === 'intro') $('.identity-kicker').innerHTML = '<span class="identity-brand-rkx">R<span>K</span>X</span>';
+    else $('.identity-kicker').innerHTML = '<img class="identity-provider-logo" src="/assets/ij-info-logo-transparent.png" alt="(주)인증정보평가 IJ-info">';
     $('.identity-phone').classList.toggle('is-lock-screen', next === 'phone_code');
     if (next === 'phone_code') {
       const now = new Date();
@@ -35,7 +38,7 @@
     root.querySelectorAll('[data-identity-phone-step]').forEach(section => { section.hidden = section.dataset.identityPhoneStep !== next; });
     const index = { intro: 0, phone: 0, phone_code: 0, id_card: 1, face: 2, completed: 3 }[next] ?? 0;
     root.querySelectorAll('[data-progress]').forEach((item, i) => item.classList.toggle('active', i <= index));
-    $('#identityStepCount').textContent = `STEP ${String(index + 1).padStart(2, '0')} / 04 · ${mode === 'ijinfo' ? 'IJ-info 실습 연동' : '로컬 모의 인증'}`;
+    $('#identityStepCount').textContent = `STEP ${String(index + 1).padStart(2, '0')} / 04 · 본인확인`;
     $('#identityProgressFill').style.width = `${(index + 1) * 25}%`;
     $('.identity-phone-scroll').scrollTop = 0;
   }
@@ -51,9 +54,22 @@
     root.addEventListener('close', stopCamera);
     $('#identityClose').addEventListener('click', close);
     $('#identityDone').addEventListener('click', close);
+    const consentKeys = ['collect', 'uid', 'carrier_terms', 'biometric'];
+    const consentInputs = consentKeys.map(key => $(`input[name="${key}"]`));
+    const allConsent = $('#identityAllConsent');
+    const syncAllConsent = () => {
+      const checkedCount = consentInputs.filter(input => input.checked).length;
+      allConsent.checked = checkedCount === consentInputs.length;
+      allConsent.indeterminate = checkedCount > 0 && checkedCount < consentInputs.length;
+    };
+    allConsent.addEventListener('change', () => {
+      consentInputs.forEach(input => { input.checked = allConsent.checked; });
+      allConsent.indeterminate = false;
+    });
+    consentInputs.forEach(input => input.addEventListener('change', syncAllConsent));
+    syncAllConsent();
     $('#identityBegin').addEventListener('click', run(async () => {
-      const keys = ['collect', 'uid', 'carrier_terms', 'biometric'];
-      const consents = Object.fromEntries(keys.map(key => [key, $(`input[name="${key}"]`).checked]));
+      const consents = Object.fromEntries(consentKeys.map((key, index) => [key, consentInputs[index].checked]));
       const result = await request('start', { consents });
       mode = result.mode;
       window.dispatchEvent(new Event('rkx-identity-progress'));
@@ -84,7 +100,7 @@
       const result = await request('phone/start', { name: name.value, phone: phone.value, rrn: rrn.value });
       sessionStorage.setItem('rkx_demo_identity_code', result.demoCode);
       $('#identityDemoCode').textContent = result.demoCode;
-      feedback('새 실습 번호가 발급되었습니다.');
+      feedback('인증번호를 다시 발급했습니다.');
     }));
     $('#identityCardForm').addEventListener('submit', run(async event => {
       event.preventDefault();
@@ -139,6 +155,7 @@
     if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) throw new Error('이 브라우저에서 카메라를 사용할 수 없습니다. localhost 또는 HTTPS로 열어 주세요.');
     stopCamera();
     cameraTarget = target;
+    document.querySelector('#identityCameraView').dataset.target = target;
     try {
       // 첫 접근으로 권한을 받은 뒤 장치 이름을 읽는다. 미리보기는 선택한 카메라로만 연다.
       const permissionStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
@@ -211,12 +228,16 @@
 
   async function takePhoto() {
     const video = document.querySelector('#identityVideo');
-    if (!cameraStream || !video.videoWidth) throw new Error('카메라 화면이 준비되지 않았습니다.');
+    if (!cameraStream || !video.videoWidth || !video.videoHeight) throw new Error('카메라 화면이 준비되지 않았습니다.');
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 1280 / video.videoWidth);
-    canvas.width = Math.round(video.videoWidth * scale);
-    canvas.height = Math.round(video.videoHeight * scale);
-    canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+    const frameRatio = 4 / 3;
+    const cropWidth = Math.min(video.videoWidth, video.videoHeight * frameRatio);
+    const cropHeight = cropWidth / frameRatio;
+    const cropX = (video.videoWidth - cropWidth) / 2;
+    const cropY = (video.videoHeight - cropHeight) / 2;
+    canvas.width = Math.round(Math.min(1280, cropWidth));
+    canvas.height = Math.round(canvas.width / frameRatio);
+    canvas.getContext('2d').drawImage(video, cropX, cropY, cropWidth, cropHeight, 0, 0, canvas.width, canvas.height);
     setImage(cameraTarget, canvas.toDataURL('image/jpeg', .86));
     stopCamera();
   }
@@ -261,7 +282,7 @@
       } else if (current.stage === 'phone_code') {
         const code = sessionStorage.getItem('rkx_demo_identity_code');
         if (code) { $('#identityDemoCode').textContent = code; show('phone_code'); }
-        else { show('phone'); feedback('성명과 주민등록번호, 휴대폰번호를 다시 입력해 새 실습 번호를 받아 주세요.'); }
+        else { show('phone'); feedback('성명과 주민등록번호, 휴대폰번호를 다시 입력해 인증번호를 새로 받아 주세요.'); }
       } else show(current.stage || 'intro');
       root.showModal();
     } catch (error) { alert(error.message); }

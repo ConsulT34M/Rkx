@@ -41,9 +41,6 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
         req.body?.termsConsent !== true || req.body?.privacyConsent !== true || req.body?.outsourcingConsent !== true) {
       return problem(res, '입력값과 필수 동의 항목을 확인해 주세요.');
     }
-    const sample = samplePersonByName(name);
-    if (!sample) return problem(res, 'IJ-info 샘플에 없는 이름입니다. 가상 인물의 이름을 입력해 주세요.');
-    if (sample.mois_status !== '정상') return problem(res, '이 샘플 인물의 증표는 분실 상태라 인증할 수 없습니다.');
     const issues = passwordIssues(password);
     if (issues.length) return problem(res, `비밀번호 조건: ${issues.join(', ')}`);
     const [[existing]] = await pool.execute('SELECT id FROM users WHERE email=?', [email]);
@@ -57,7 +54,8 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
   }));
 
   app.get('/api/signup/identity/demo-person', route(pending), (req, res) => {
-    res.json({ person: publicDemoPerson(samplePersonByName(req.signup.name)) });
+    const sample = samplePersonByName(req.signup.name);
+    res.json({ person: sample ? publicDemoPerson(sample) : null });
   });
   app.get('/api/signup/identity/status', route(pending), (req, res) => {
     res.json({ identityStatus: 'pending', mode: req.signup.mode, stage: req.signup.stage, expiresAt: req.signup.expires_at });
@@ -80,9 +78,9 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
     const record = req.signup;
     const sample = samplePersonByName(record.name);
     if (!['phone', 'phone_code'].includes(record.stage)) return problem(res, '휴대폰 확인 단계가 아닙니다.', 409);
-    if (typeof req.body?.name !== 'string' || typeof req.body?.phone !== 'string' || typeof req.body?.rrn !== 'string' ||
+    if (!sample || typeof req.body?.name !== 'string' || typeof req.body?.phone !== 'string' || typeof req.body?.rrn !== 'string' ||
         !sampleMatches({ name: req.body.name, phone: req.body.phone, rrn: req.body.rrn }, sample)) {
-      return problem(res, '실습 인물의 성명·주민등록번호·휴대폰번호를 확인해 주세요.');
+      return problem(res, '입력한 정보로 본인확인을 완료할 수 없습니다. 성명·주민등록번호·휴대폰번호를 확인해 주세요.');
     }
     const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
     const salt = crypto.randomBytes(32).toString('hex');

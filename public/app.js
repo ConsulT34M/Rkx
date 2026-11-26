@@ -31,7 +31,7 @@ document.addEventListener('keydown', touchSession);
 $('#loginForm').addEventListener('submit', event => { event.preventDefault(); submitAuth(event.currentTarget, 'login'); });
 $('#registerForm').addEventListener('submit', event => { event.preventDefault(); submitAuth(event.currentTarget, 'register'); });
 $('#closeAuth').addEventListener('click', () => $('#authDialog').close());
-$('#authDialog').addEventListener('close', () => { $('#loginForm').reset(); $('#registerForm').reset(); $('#authFeedback').textContent = ''; });
+$('#authDialog').addEventListener('close', () => { $('#loginForm').reset(); clearRegisterForm(); $('#authFeedback').textContent = ''; });
 $('#openPolicyFromAuth').addEventListener('click', () => { $('#authDialog').close(); showView('privacy'); });
 $('#openTermsFromAuth').addEventListener('click', () => { $('#authDialog').close(); showView('terms'); });
 $('#ticketForm').addEventListener('submit', submitTicket);
@@ -62,6 +62,6 @@ function syncViewFromHistory() {
 }
 window.addEventListener('popstate', syncViewFromHistory);
 window.addEventListener('hashchange', syncViewFromHistory);
-window.addEventListener('pageshow', () => { $('#loginForm').reset(); $('#registerForm').reset(); });
+window.addEventListener('pageshow', () => { $('#loginForm').reset(); clearRegisterForm(); });
 refreshUser().then(() => { const initial = location.hash.slice(1); if (allowedViews.includes(initial)) showView(initial, { updateHistory: false }); });
 loadPublicConfig(); window.marketUI.init();
