@@ -113,7 +113,8 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
       await pool.execute("UPDATE signup_requests SET stage='phone_code',phone=? WHERE id=?", [phone, record.id]);
       return res.json({
         stage: 'phone_code', phoneMask: issued.phone_mask, inboxUrl: inboxUrl(),
-        expiresInSeconds: 180, notice: '이용자 휴대폰으로 인증번호를 보냈습니다. 휴대폰 문자 수신함에서 확인해 주세요.'
+        previewToken: issued.local_preview_token || null,
+        expiresInSeconds: 180, notice: '인증번호를 발급했습니다. 오른쪽 휴대폰 화면에서 확인해 주세요.'
       });
     }
 

@@ -9,6 +9,19 @@
   let signupFlow = false;
   const $ = selector => root.querySelector(selector);
 
+  function rrnFrom(form) {
+    return form.elements.rrnFront.value + form.elements.rrnBack.value;
+  }
+
+  function phoneData(form) {
+    return {
+      name: form.elements.name.value,
+      rrn: rrnFrom(form),
+      phone: ['phonePrefix', 'phoneMiddle', 'phoneLast']
+        .map(key => form.elements[key].value).join('')
+    };
+  }
+
   async function request(path, payload) {
     const response = await fetch(`${signupFlow ? '/api/signup/identity' : '/api/identity'}/${path}`, {
       method: payload === undefined ? 'GET' : 'POST',
@@ -77,33 +90,46 @@
     }));
     $('#identityPhoneForm').addEventListener('submit', run(async event => {
       event.preventDefault();
-      const data = Object.fromEntries(new FormData(event.currentTarget));
+      const data = phoneData(event.currentTarget);
       const result = await request('phone/start', data);
       showIssuedCode(result);
       show('phone_code');
     }));
     function showIssuedCode(result) {
-      // IJ-info 연동에서는 인증번호가 응답에 없다. 실제 문자처럼 이용자 휴대폰
-      // (IJ-info 문자 수신함)에서 읽는다 — RKX 서버는 인증번호를 보지 않는다.
+      // IJ-info가 소유한 로컬 수신 화면을 휴대폰 안에 띄운다. RKX는 번호를 읽지 않는다.
       const code = $('#identityDemoCode');
-      const wrap = $('#identityInboxWrap');
-      const link = $('#identityInboxLink');
+      const frame = $('#identityInboxFrame');
       const notice = $('#identityCodeNotice');
       notice.textContent = '';
       if (result.demoCode) {
         sessionStorage.setItem('rkx_demo_identity_code', result.demoCode);
         code.textContent = result.demoCode;
         notice.append('인증번호 ', code, '를 왼쪽 화면에 입력해 주세요.');
-        wrap.hidden = true;
+        notice.hidden = false;
+        frame.hidden = true;
+        frame.src = 'about:blank';
         return;
       }
       sessionStorage.removeItem('rkx_demo_identity_code');
-      code.textContent = result.phoneMask || '휴대폰';
-      notice.append(code, '로 인증번호를 보냈습니다. 문자 수신함에서 확인해 주세요.');
-      if (result.inboxUrl) {
-        link.href = result.inboxUrl;
-        wrap.hidden = false;
+      const inbox = result.inboxUrl ? new URL(result.inboxUrl) : null;
+      const local = ['localhost', '127.0.0.1'].includes(window.location.hostname)
+        && inbox && ['localhost', '127.0.0.1'].includes(inbox.hostname)
+        && inbox.protocol === 'http:';
+      if (!local) {
+        notice.textContent = '인증번호를 휴대폰 수신함에서 확인해 주세요.';
+        notice.hidden = false;
+        frame.hidden = true;
+        return;
       }
+      // 같은 사이트의 별도 포트를 써야 브라우저가 IJ-info 기기 세션을 iframe에 보낸다.
+      inbox.hostname = window.location.hostname;
+      inbox.pathname = '/test-inbox/widget';
+      inbox.search = '';
+      inbox.hash = '';
+      if (result.previewToken) inbox.searchParams.set('preview', result.previewToken);
+      frame.src = inbox.href;
+      frame.hidden = false;
+      notice.hidden = true;
     }
 
     $('#identityCodeForm').addEventListener('submit', run(async event => {
@@ -111,16 +137,17 @@
       const code = new FormData(event.currentTarget).get('code');
       const result = await request('phone/confirm', { code });
       sessionStorage.removeItem('rkx_demo_identity_code');
+      $('#identityInboxFrame').src = 'about:blank';
       mode = result.mode;
       show('id_card');
     }));
     $('#identityRestartCode').addEventListener('click', run(async () => {
-      const { name, phone, rrn } = $('#identityPhoneForm').elements;
-      if (!name.value || !phone.value || !rrn.value) {
+      const data = phoneData($('#identityPhoneForm'));
+      if (!data.name || !/^\d{13}$/.test(data.rrn) || !/^\d{10,11}$/.test(data.phone)) {
         show('phone');
         throw new Error('성명과 주민등록번호, 휴대폰번호를 다시 입력해 주세요.');
       }
-      const result = await request('phone/start', { name: name.value, phone: phone.value, rrn: rrn.value, resend: true });
+      const result = await request('phone/start', { ...data, resend: true });
       showIssuedCode(result);
       feedback('인증번호를 다시 발급했습니다.');
     }));
@@ -128,7 +155,7 @@
       event.preventDefault();
       if (!cardImage) throw new Error('웹캠으로 가상 신분증을 먼저 촬영해 주세요.');
       const data = Object.fromEntries(new FormData(event.currentTarget));
-      const result = await request('id-card', { ...data, image: cardImage });
+      const result = await request('id-card', { rrn: rrnFrom(event.currentTarget), issueDate: data.issueDate, image: cardImage });
       cardImage = null;
       mode = result.mode;
       show('face');
@@ -284,6 +311,7 @@
     stopCamera();
     cardImage = null;
     faceImage = null;
+    if (root) $('#identityInboxFrame').src = 'about:blank';
     if (root?.open) root.close();
   }
 

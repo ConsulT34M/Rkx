@@ -20,7 +20,22 @@
 
       <section data-identity-step="phone" hidden>
         <h3>휴대폰 본인확인</h3>
-        <form id="identityPhoneForm"><label>이름<input name="name" autocomplete="off" required></label><label>주민등록번호 (13자리)<input name="rrn" inputmode="numeric" pattern="[0-9]{13}" maxlength="13" autocomplete="off" required></label><label>휴대폰번호<input name="phone" type="tel" inputmode="numeric" autocomplete="off" required></label><button class="identity-primary" type="submit">인증번호 받기</button></form>
+        <form id="identityPhoneForm">
+          <label>이름<input name="name" autocomplete="off" required></label>
+          <div class="identity-split-field"><span>주민등록번호 (13자리)</span><div class="identity-input-row identity-rrn-row">
+            <input name="rrnFront" aria-label="주민등록번호 앞 6자리" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="앞 6자리" autocomplete="off" required>
+            <span aria-hidden="true">−</span>
+            <input name="rrnBack" aria-label="주민등록번호 뒤 7자리" inputmode="numeric" pattern="[0-9]{7}" maxlength="7" placeholder="뒤 7자리" autocomplete="off" required>
+          </div></div>
+          <div class="identity-split-field"><span>휴대폰번호</span><div class="identity-input-row identity-phone-row">
+            <input name="phonePrefix" type="tel" aria-label="휴대폰번호 앞 3자리" inputmode="numeric" pattern="[0-9]{3}" maxlength="3" value="010" autocomplete="off" required>
+            <span aria-hidden="true">−</span>
+            <input name="phoneMiddle" type="tel" aria-label="휴대폰번호 가운데 4자리" inputmode="numeric" pattern="[0-9]{3,4}" maxlength="4" placeholder="가운데" autocomplete="off" required>
+            <span aria-hidden="true">−</span>
+            <input name="phoneLast" type="tel" aria-label="휴대폰번호 끝 4자리" inputmode="numeric" pattern="[0-9]{4}" maxlength="4" placeholder="끝 4자리" autocomplete="off" required>
+          </div></div>
+          <button class="identity-primary" type="submit">인증번호 받기</button>
+        </form>
       </section>
 
       <section data-identity-step="phone_code" hidden>
@@ -46,7 +61,7 @@
             <h3>가상 신분증 촬영</h3><p>웹캠으로 가상 신분증을 촬영하세요. 실물 증표는 사용하지 마세요.</p>
             <div class="identity-preview"><img id="identityCardPreview" alt="선택한 신분증 이미지 미리보기" hidden><span id="identityCardPlaceholder">촬영한 이미지가 여기에 표시됩니다</span></div>
             <div class="identity-photo-actions"><button type="button" data-identity-camera="id_card">촬영하기</button></div>
-            <form id="identityCardForm"><label>주민등록번호<input name="rrn" inputmode="numeric" autocomplete="off" required></label><label>발급일자<input name="issueDate" type="date" required></label><button class="identity-primary" type="submit">신분증 단계 확인</button></form>
+            <form id="identityCardForm"><div class="identity-split-field"><span>주민등록번호</span><div class="identity-input-row identity-rrn-row"><input name="rrnFront" aria-label="주민등록번호 앞 6자리" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" placeholder="앞 6자리" autocomplete="off" required><span aria-hidden="true">−</span><input name="rrnBack" aria-label="주민등록번호 뒤 7자리" inputmode="numeric" pattern="[0-9]{7}" maxlength="7" placeholder="뒤 7자리" autocomplete="off" required></div></div><label>발급일자<input name="issueDate" type="date" required></label><button class="identity-primary" type="submit">신분증 단계 확인</button></form>
           </section>
 
           <section data-identity-phone-step="face" hidden>
@@ -65,9 +80,7 @@
             <div class="identity-message-heading"><span class="identity-message-icon" aria-hidden="true">●</span><span>메시지</span><span class="identity-message-now">지금</span></div>
             <strong class="identity-message-sender">IJ-info 본인확인</strong>
             <p id="identityCodeNotice"><strong id="identityDemoCode"></strong></p>
-            <p class="identity-message-open" hidden id="identityInboxWrap">
-              <a id="identityInboxLink" href="#" target="_blank" rel="noopener noreferrer">문자 수신함 열기</a>
-            </p>
+            <iframe id="identityInboxFrame" class="identity-inbox-frame" title="IJ-info 인증번호 알림" sandbox="allow-forms allow-same-origin" hidden></iframe>
           </div>
           <p class="identity-lock-notice">인증번호는 3분 동안 유효합니다</p>
         </section>
