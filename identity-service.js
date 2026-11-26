@@ -33,11 +33,11 @@ export function demoCardSvg(person) {
 export function demoFaceSvg(person) { return faceTemplate.replaceAll('장민지', xml(person.name)); }
 
 export function partnerConfigured(env = process.env) {
-  return Boolean(env.IJINFO_BASE_URL && env.IJINFO_API_KEY && env.IJINFO_HMAC_SECRET && env.IJINFO_DEMO_CI_KEY_B64);
+  return Boolean(env.IJINFO_BASE_URL && env.IJINFO_API_KEY && env.IJINFO_HMAC_SECRET);
 }
 
 export function partnerPartiallyConfigured(env = process.env) {
-  return ['IJINFO_BASE_URL', 'IJINFO_API_KEY', 'IJINFO_HMAC_SECRET', 'IJINFO_DEMO_CI_KEY_B64'].some(key => Boolean(env[key])) && !partnerConfigured(env);
+  return ['IJINFO_BASE_URL', 'IJINFO_API_KEY', 'IJINFO_HMAC_SECRET'].some(key => Boolean(env[key])) && !partnerConfigured(env);
 }
 
 export function partnerBaseUrl(env = process.env) {
@@ -70,12 +70,18 @@ export function parseDemoImage(dataUrl) {
   return { base64: match[2], filename: match[1] === 'png' ? 'sample.png' : 'capture.jpg' };
 }
 
-export function mockCi(rrn = demoPerson.rrn, env = process.env) {
-  const encoded = env.IJINFO_DEMO_CI_KEY_B64 || '';
-  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(encoded)) throw new Error('IJINFO_DEMO_CI_KEY_B64 설정이 올바르지 않습니다.');
-  const key = Buffer.from(encoded, 'base64');
-  if (key.length < 16) throw new Error('IJINFO_DEMO_CI_KEY_B64 설정이 올바르지 않습니다.');
-  return crypto.createHmac('sha512', key).update(rrn.replace(/[\s-]/g, '')).digest('base64');
+// CI는 더 이상 RKX가 만들지 않는다.
+//
+// 전에는 IJINFO_DEMO_CI_KEY_B64로 주민등록번호에서 CI를 계산해 IJ-info에 보냈다.
+// 그러면 IJ-info의 X-01 대조(휴대폰 명의자 = 신분증 명의자)가 같은 키로 같은 번호를
+// 두 번 계산해 비교하는 항등식이 되어 검사 구실을 하지 못한다.
+//
+// 이제 휴대폰 본인확인은 IJ-info가 하고(IA-23·IA-24), CI는 통신사가 발급해
+// IJ-info 안에만 남는다. RKX는 CI를 보지 않는다.
+
+export function inboxUrl(env = process.env) {
+  // 이용자 휴대폰의 문자 수신함. 인증번호는 여기로만 간다 — RKX 서버는 볼 수 없다.
+  return env.IJINFO_INBOX_URL || `${partnerBaseUrl(env)}/test-inbox/`;
 }
 
 export function verifyIjinfoSignature(timestamp, body, signature, env = process.env) {

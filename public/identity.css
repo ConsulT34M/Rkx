@@ -144,3 +144,14 @@
 .identity-dialog:not(.is-provider-step) .identity-layout{display:block;height:auto;min-height:0}
 .identity-dialog:not(.is-provider-step) .identity-guide{max-height:none;overflow:visible}
 .identity-dialog:not(.is-provider-step) .identity-phone-shell{display:none}
+
+/* 모의 휴대폰 알림에서 IJ-info 문자 수신함으로 가는 링크 */
+.identity-message-open {
+  margin: 8px 0 0;
+}
+
+.identity-message-open a {
+  color: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+}

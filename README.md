@@ -6,7 +6,7 @@ HTML·CSS·JavaScript, Node.js/Express, MySQL 8로 만든 로컬 실행 프로�
 
 | 기능 | 동작 |
 | --- | --- |
-| 회원가입·본인확인 | 첫 화면에서 이름·이메일·비밀번호와 필수 동의를 입력하면 임시 가입 신청만 저장됩니다. 이어 왼쪽 화면에서 가상 인물의 이름·13자리 가상번호·연락처를 입력하고, 오른쪽 휴대전화 화면의 실습 인증번호를 확인합니다. 신분증과 셀카 단계를 모두 마친 뒤에야 계정과 로그인 세션을 만듭니다. `samples/people.json`의 가상 인물 10명 중 정상 상태인 인물을 사용하며 결과는 `demo_verified`입니다. 현재는 **실습용 모의 판정**이며 실제 신원 확인이 아닙니다. |
+| 회원가입·본인확인 | 첫 화면에서 이름·이메일·비밀번호와 필수 동의를 입력하면 임시 가입 신청만 저장됩니다. 이어 왼쪽 화면에서 가상 인물의 이름·13자리 가상번호·연락처를 입력하고, 오른쪽 휴대전화 화면의 안내를 따라 IJ-info 문자 수신함에서 인증번호를 확인합니다. 신분증과 셀카 단계를 모두 마친 뒤에야 계정과 로그인 세션을 만듭니다. `samples/people.json`의 가상 인물 10명 중 정상 상태인 인물을 사용하며 결과는 `demo_verified`입니다. 현재는 **실습용 모의 판정**이며 실제 신원 확인이 아닙니다. |
 | 로그인·로그아웃 | 이메일(아이디)과 비밀번호를 서버에서 검증하고 HttpOnly 세션을 발급·종료합니다. 서버 세션은 마지막 인증 요청 이후 30분이 지나면 만료됩니다. 로그인 2회 실패 후부터 CERN captcha-api 이미지 문자를 확인합니다. |
 | 상담 접수 | 고객이 문의 유형과 내용을 입력하면 접수번호를 만듭니다. 같은 요청 ID를 다시 보내면 기존 접수번호를 반환합니다. 말결로 보내는 정보는 상담용 고객 식별키, 문의 유형·내용, 접수번호로 제한하며 전화 콜백일 때만 연락처·희망 시간·녹취 동의 상태가 추가됩니다. |
 | 채팅 | 고객 메시지를 저장하고 설정된 말결 채팅 웹훅으로 전달합니다. 수탁사 테스트 계정 또는 서명된 콜백으로 답변을 남깁니다. |
@@ -55,13 +55,13 @@ npm run accounts:clear -- --yes
 
 ### RKX 화면과 IJ-info DIRECT 연동
 
-가입 정보를 입력하고 **다음으로**를 누르면 PDF 흐름에 맞춘 2열 본인확인 화면이 열립니다. 왼쪽에서 이름·13자리 가상번호·연락처와 실습 인증번호를 입력하고, 오른쪽 휴대전화 화면에서 인증번호 알림, 신분증 확인, 셀카 촬영을 진행합니다. 웹캠의 **촬영하기** 또는 파일 선택으로 PNG/JPEG 이미지(최대 5MB)를 제출할 수 있습니다. 카메라는 `localhost` 또는 HTTPS에서만 사용할 수 있습니다. `public/identity.html`, `identity.css`, `identity.js`가 이 화면을 담당합니다.
+가입 정보를 입력하고 **다음으로**를 누르면 PDF 흐름에 맞춘 2열 본인확인 화면이 열립니다. 왼쪽에서 이름·13자리 가상번호·연락처와 인증번호를 입력하고, 오른쪽 휴대전화 화면에서 문자 알림(수신함 링크), 신분증 확인, 셀카 촬영을 진행합니다. 웹캠의 **촬영하기** 또는 파일 선택으로 PNG/JPEG 이미지(최대 5MB)를 제출할 수 있습니다. 카메라는 `localhost` 또는 HTTPS에서만 사용할 수 있습니다. `public/identity.html`, `identity.css`, `identity.js`가 이 화면을 담당합니다.
 
 샘플 인물은 [IJ-info의 `samples/people.json`](https://github.com/ConsulT34M/IJ-info/blob/main/samples/people.json)에 있는 10명입니다. 예를 들어 1번 장민지와 10번 박유진을 사용할 수 있고, 분실 상태인 9번은 인증할 수 없습니다. `public/assets/demo-id-card.svg`와 `demo-person.svg`는 실습용 합성 그림입니다. 샘플 증표/얼굴 사용 버튼으로 이미지를 선택할 수도 있습니다. **실제 주민등록증·실제 얼굴 사진을 입력하지 마세요.** RKX는 제출 이미지를 DB나 파일로 보관하지 않고 요청 처리 중 메모리에만 둡니다.
 
-환경변수 4개(`IJINFO_BASE_URL`, `IJINFO_API_KEY`, `IJINFO_HMAC_SECRET`, `IJINFO_DEMO_CI_KEY_B64`)가 모두 비어 있으면 로컬 모의 판정을 합니다. 설정하면 RKX 서버가 IJ-info의 `IA-01 DIRECT` → `IA-21 신분증` → `IA-22 얼굴` API를 HMAC 서명으로 호출합니다. `POST /api/identity/ijinfo-callback`은 서명된 `IA-11` 결과를 회원가입 건과 기존 회원 건 모두에 대해 받습니다. 가입 계정은 `IA-22` 성공 응답이 확인된 뒤에만 생성하고, 응답이 유실되면 `IA-12` 결과 조회로 확인합니다. IJ-info 앱과 PostgreSQL·모의 통신사 등은 별도 실행해야 합니다. 현재 IJ-info의 `FakeFaceMatcher`는 **이미지 내용이 아니라 파일명 힌트로 판정**하므로, 웹캠 사진도 실제 얼굴 일치를 증명하지 않습니다.
+환경변수 3개(`IJINFO_BASE_URL`, `IJINFO_API_KEY`, `IJINFO_HMAC_SECRET`)가 모두 비어 있으면 로컬 모의 판정을 합니다. 설정하면 RKX 서버가 IJ-info의 `IA-01 DIRECT` → `IA-23 인증번호 발송` → `IA-24 인증번호 확인` → `IA-21 신분증` → `IA-22 얼굴` API를 HMAC 서명으로 호출합니다. `POST /api/identity/ijinfo-callback`은 서명된 `IA-11` 결과를 회원가입 건과 기존 회원 건 모두에 대해 받습니다. 가입 계정은 `IA-22` 성공 응답이 확인된 뒤에만 생성하고, 응답이 유실되면 `IA-12` 결과 조회로 확인합니다. IJ-info 앱과 PostgreSQL·모의 통신사 등은 별도 실행해야 합니다. 현재 IJ-info의 `FakeFaceMatcher`는 **이미지 내용이 아니라 파일명 힌트로 판정**하므로, 웹캠 사진도 실제 얼굴 일치를 증명하지 않습니다.
 
-`DIRECT` 모드는 휴대폰 확인에서 얻은 88자 CI가 필수입니다. 여기서는 가상 인물의 성명·전화번호를 확인하고 화면에 실습용 번호를 보여 준 뒤, **같은 IJ-info 실습 CI 키**로 가상번호의 CI를 계산합니다. 실제 SMS·통신사 확인을 대체하지 않습니다. IJ-info 저장소에서 `flask create-client --name RKX --callback-url http://127.0.0.1:3000/api/identity/ijinfo-callback --allowed-ips 127.0.0.1`로 테스트 고객사를 만들고 발급된 API Key와 HMAC Secret을 RKX `.env`에 입력합니다. `IJINFO_DEMO_CI_KEY_B64`에는 IJ-info의 `instance/dev_secrets.json` 안 `ekyc/ci-key` 값을 로컬 실습용으로만 복사합니다. 이 키는 실제 운영 연동에 사용하지 마세요. IJ-info 앱이 `http://127.0.0.1:8000`에서 동작하면 `IJINFO_BASE_URL`에 그 주소를 설정합니다. 운영 환경에서는 HTTPS만 허용됩니다.
+**휴대폰 본인확인은 IJ-info가 합니다.** RKX는 성명·연락처를 IJ-info에 넘기고(`IA-23`), IJ-info가 통신사에 명의를 확인한 뒤 인증번호를 **이용자 휴대폰으로** 보냅니다. 인증번호는 RKX 서버로 오지 않습니다 — 오른쪽 휴대전화 화면의 **문자 수신함 열기** 링크로 IJ-info 수신함에서 확인하고 왼쪽 화면에 입력합니다. 입력한 번호는 `IA-24`로 IJ-info가 검증하고, 통신사에서 받은 CI는 IJ-info 안에만 남습니다. **RKX는 CI를 만들지도 보지도 않습니다** — 예전처럼 같은 CI 키로 가상번호의 CI를 계산해 보내면 IJ-info의 X-01 대조(휴대폰 명의자 = 신분증 명의자)가 항등식이 되어 검사 구실을 하지 못하기 때문입니다. IJ-info 저장소에서 `flask create-client --name RKX --callback-url http://127.0.0.1:3000/api/identity/ijinfo-callback --allowed-ips 127.0.0.1`로 테스트 고객사를 만들고 발급된 API Key와 HMAC Secret을 RKX `.env`에 입력합니다. IJ-info 앱이 `http://127.0.0.1:8000`에서 동작하면 `IJINFO_BASE_URL`에 그 주소를 설정합니다. 운영 환경에서는 HTTPS만 허용됩니다.
 
 기존 `POST /api/identity/callback`은 과거 가입 신청 자료를 처리하던 프로토타입 코드로 남아 있으며 새 흐름에서 호출되지 않습니다. 실제 운영 전에는 공식 휴대폰 확인, 실제 얼굴 판정, 수탁 계약과 보유·파기 정책을 별도로 완성해야 합니다.
 

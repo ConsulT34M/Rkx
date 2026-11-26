@@ -79,10 +79,33 @@
       event.preventDefault();
       const data = Object.fromEntries(new FormData(event.currentTarget));
       const result = await request('phone/start', data);
-      sessionStorage.setItem('rkx_demo_identity_code', result.demoCode);
-      $('#identityDemoCode').textContent = result.demoCode;
+      showIssuedCode(result);
       show('phone_code');
     }));
+    function showIssuedCode(result) {
+      // IJ-info 연동에서는 인증번호가 응답에 없다. 실제 문자처럼 이용자 휴대폰
+      // (IJ-info 문자 수신함)에서 읽는다 — RKX 서버는 인증번호를 보지 않는다.
+      const code = $('#identityDemoCode');
+      const wrap = $('#identityInboxWrap');
+      const link = $('#identityInboxLink');
+      const notice = $('#identityCodeNotice');
+      notice.textContent = '';
+      if (result.demoCode) {
+        sessionStorage.setItem('rkx_demo_identity_code', result.demoCode);
+        code.textContent = result.demoCode;
+        notice.append('인증번호 ', code, '를 왼쪽 화면에 입력해 주세요.');
+        wrap.hidden = true;
+        return;
+      }
+      sessionStorage.removeItem('rkx_demo_identity_code');
+      code.textContent = result.phoneMask || '휴대폰';
+      notice.append(code, '로 인증번호를 보냈습니다. 문자 수신함에서 확인해 주세요.');
+      if (result.inboxUrl) {
+        link.href = result.inboxUrl;
+        wrap.hidden = false;
+      }
+    }
+
     $('#identityCodeForm').addEventListener('submit', run(async event => {
       event.preventDefault();
       const code = new FormData(event.currentTarget).get('code');
@@ -97,9 +120,8 @@
         show('phone');
         throw new Error('성명과 주민등록번호, 휴대폰번호를 다시 입력해 주세요.');
       }
-      const result = await request('phone/start', { name: name.value, phone: phone.value, rrn: rrn.value });
-      sessionStorage.setItem('rkx_demo_identity_code', result.demoCode);
-      $('#identityDemoCode').textContent = result.demoCode;
+      const result = await request('phone/start', { name: name.value, phone: phone.value, rrn: rrn.value, resend: true });
+      showIssuedCode(result);
       feedback('인증번호를 다시 발급했습니다.');
     }));
     $('#identityCardForm').addEventListener('submit', run(async event => {

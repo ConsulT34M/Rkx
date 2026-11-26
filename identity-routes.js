@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import {
   publicDemoPerson, samplePersonByName, samplePersonByNo, demoCardSvg, demoFaceSvg,
   partnerConfigured, partnerPartiallyConfigured, sampleMatches, parseDemoImage,
-  mockCi, ijinfoRequest, verifyIjinfoSignature
+  inboxUrl, ijinfoRequest, verifyIjinfoSignature
 } from './identity-service.js';
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -54,11 +54,20 @@ export function mountIdentityRoutes(app, { pool, requireUser, role, route, limit
     }
     const mode = partnerConfigured() ? 'ijinfo' : 'demo';
     const reference = `rkx-${req.user.id}-${crypto.randomUUID()}`;
+    // 휴대폰 본인확인부터 IJ-info 를 거치므로 인증 건을 먼저 만든다(IA-01).
+    let providerReference = null;
+    if (mode === 'ijinfo') {
+      try {
+        const result = await ijinfoRequest('POST', '/verifications', { client_user_ref: reference, mode: 'DIRECT' });
+        providerReference = result.verification_id;
+        if (!/^[0-9a-f-]{36}$/i.test(providerReference || '')) return apiError(res, 'IJ-info 응답을 확인할 수 없습니다.', 502);
+      } catch { return apiError(res, 'IJ-info에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.', 502); }
+    }
     await pool.execute(`INSERT INTO identity_verifications
-      (user_id,client_user_ref,mode,stage,sample_person_no,expires_at)
-      VALUES (?,?,?,'phone',?,DATE_ADD(NOW(), INTERVAL 20 MINUTE))
-      ON DUPLICATE KEY UPDATE client_user_ref=VALUES(client_user_ref),provider_reference=NULL,mode=VALUES(mode),stage='phone',sample_person_no=VALUES(sample_person_no),pending_phone=NULL,code_hash=NULL,code_expires_at=NULL,expires_at=VALUES(expires_at)`,
-    [req.user.id, reference, mode, person.person_no]);
+      (user_id,client_user_ref,provider_reference,mode,stage,sample_person_no,expires_at)
+      VALUES (?,?,?,?,'phone',?,DATE_ADD(NOW(), INTERVAL 20 MINUTE))
+      ON DUPLICATE KEY UPDATE client_user_ref=VALUES(client_user_ref),provider_reference=VALUES(provider_reference),mode=VALUES(mode),stage='phone',sample_person_no=VALUES(sample_person_no),pending_phone=NULL,code_hash=NULL,code_expires_at=NULL,expires_at=VALUES(expires_at)`,
+    [req.user.id, reference, providerReference, mode, person.person_no]);
     await pool.execute("UPDATE users SET identity_status='pending' WHERE id=?", [req.user.id]);
     res.json({ mode, stage: 'phone' });
   }));
@@ -73,27 +82,62 @@ export function mountIdentityRoutes(app, { pool, requireUser, role, route, limit
       return apiError(res, '실습 인물의 성명·주민등록번호·휴대폰번호를 확인해 주세요.');
     }
     const phone = req.body.phone.replace(/\D/g, '');
+
+    // 인증번호는 IJ-info 가 만들어 이용자 휴대폰으로 보낸다(IA-23).
+    // RKX 는 인증번호를 받지 않는다 — 받으면 그 자체가 오라클이다.
+    if (row.mode === 'ijinfo') {
+      let issued;
+      try {
+        issued = await ijinfoRequest('POST', `/verifications/${row.provider_reference}/phone/otp`, {
+          name: req.body.name, phone_number: phone, resend: req.body.resend === true
+        });
+      } catch (error) {
+        if (error.status === 400 || error.status === 409) return apiError(res, error.message, 400);
+        if (error.status === 429) return apiError(res, '잠시 후 다시 요청해 주세요. (60초 제한)', 429);
+        return apiError(res, 'IJ-info 휴대폰 본인확인에 연결할 수 없습니다.', 502);
+      }
+      await pool.execute("UPDATE identity_verifications SET stage='phone_code',pending_phone=? WHERE user_id=?", [phone, req.user.id]);
+      return res.json({
+        stage: 'phone_code', phoneMask: issued.phone_mask, inboxUrl: inboxUrl(),
+        expiresInSeconds: 180, notice: '이용자 휴대폰으로 인증번호를 보냈습니다. 휴대폰 문자 수신함에서 확인해 주세요.'
+      });
+    }
+
     const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
     const salt = crypto.randomBytes(32).toString('hex');
     await pool.execute("UPDATE identity_verifications SET stage='phone_code',pending_phone=?,code_hash=?,code_expires_at=DATE_ADD(NOW(), INTERVAL 3 MINUTE) WHERE user_id=?", [phone, `${salt}:${digest(salt + code)}`, req.user.id]);
-    res.json({ stage: 'phone_code', demoCode: code, expiresInSeconds: 180, notice: '실습용 코드입니다. 실제 SMS가 전송되지 않습니다.' });
+    res.json({ stage: 'phone_code', demoCode: code, expiresInSeconds: 180, notice: '연동 설정이 없어 로컬 모의 코드로 진행합니다.' });
   }));
 
   app.post('/api/identity/phone/confirm', ...customer, limited, route(async (req, res) => {
     const row = await load(req.user.id);
     if (!activeAt(res, row, 'phone_code')) return;
     const code = String(req.body?.code || '');
-    if (!/^\d{6}$/.test(code) || !row.code_hash || new Date(row.code_expires_at).getTime() <= Date.now()) return apiError(res, '인증번호가 올바르지 않거나 만료되었습니다.');
-    const [salt, expected] = row.code_hash.split(':');
-    if (!crypto.timingSafeEqual(Buffer.from(digest(salt + code)), Buffer.from(expected))) return apiError(res, '인증번호가 올바르지 않습니다.');
-    let providerReference = null;
+    if (!/^\d{6}$/.test(code)) return apiError(res, '인증번호 6자리를 입력해 주세요.');
+
+    // IJ-info 가 발급한 인증번호는 IJ-info 가 검증한다(IA-24). 맞으면 통신사에서 CI 를
+    // 받아 IJ-info 안에 보관한다 — RKX 로는 넘어오지 않는다.
     if (row.mode === 'ijinfo') {
       try {
-        const result = await ijinfoRequest('POST', '/verifications', { client_user_ref: row.client_user_ref, mode: 'DIRECT' });
-        providerReference = result.verification_id;
-        if (!/^[0-9a-f-]{36}$/i.test(providerReference || '')) return apiError(res, 'IJ-info 응답을 확인할 수 없습니다.', 502);
-      } catch { return apiError(res, 'IJ-info에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.', 502); }
+        await ijinfoRequest('POST', `/verifications/${row.provider_reference}/phone/confirm`, { code });
+      } catch (error) {
+        if (error.status === 409 && error.reasonCode) {
+          await pool.execute("UPDATE identity_verifications SET stage='failed' WHERE user_id=?", [req.user.id]);
+          await pool.execute("UPDATE users SET identity_status='rejected' WHERE id=?", [req.user.id]);
+          return apiError(res, `본인확인 실패 (${error.reasonCode})`, 409);
+        }
+        if (error.status === 400) return apiError(res, error.message, 400);
+        return apiError(res, 'IJ-info 휴대폰 본인확인에 연결할 수 없습니다.', 502);
+      }
+      await pool.execute("UPDATE identity_verifications SET stage='id_card',pending_phone=NULL WHERE user_id=?", [req.user.id]);
+      await pool.execute('UPDATE users SET phone=? WHERE id=?', [row.pending_phone, req.user.id]);
+      return res.json({ stage: 'id_card', mode: row.mode });
     }
+
+    if (!row.code_hash || new Date(row.code_expires_at).getTime() <= Date.now()) return apiError(res, '인증번호가 올바르지 않거나 만료되었습니다.');
+    const [salt, expected] = row.code_hash.split(':');
+    if (!crypto.timingSafeEqual(Buffer.from(digest(salt + code)), Buffer.from(expected))) return apiError(res, '인증번호가 올바르지 않습니다.');
+    const providerReference = row.provider_reference;
     const connection = await pool.getConnection();
     try {
       await connection.beginTransaction();
@@ -124,7 +168,7 @@ export function mountIdentityRoutes(app, { pool, requireUser, role, route, limit
       try {
         const result = await ijinfoRequest('POST', `/verifications/${row.provider_reference}/id-card`, {
           name: person.name, rrn: person.rrn, issue_date: person.issue_date,
-          ci: mockCi(person.rrn), filename: `id_card.${image.filename.endsWith('.png') ? 'png' : 'jpg'}`, image: image.base64,
+          filename: `id_card.${image.filename.endsWith('.png') ? 'png' : 'jpg'}`, image: image.base64,
           consents: ['collect', 'uid', 'carrier_terms', 'biometric'].map(type => ({ type, version: 'v1.0' }))
         });
         if (result.status === 'FAILED') {

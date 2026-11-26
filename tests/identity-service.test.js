@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {
   demoPerson, demoPeople, samplePersonByName, sampleMatches, demoCardSvg,
   parseDemoImage, partnerConfigured, partnerPartiallyConfigured,
-  mockCi, ijinfoRequest, verifyIjinfoSignature
+  inboxUrl, ijinfoRequest, verifyIjinfoSignature
 } from '../identity-service.js';
 
 const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lZkAAAAASUVORK5CYII=';
@@ -39,11 +39,12 @@ test('IJ-info DIRECT request signs exact body and mock CI uses sample number', a
     crypto.createHmac('sha256', 'test-secret').update('1700000000').digest('hex'),
     '1b74eaf87da46877ba651ac812b24a3bf01990e9ed0101b88268f60f965729e2'
   );
-  const key = crypto.randomBytes(32);
-  const env = { NODE_ENV: 'development', IJINFO_BASE_URL: 'http://127.0.0.1:8000', IJINFO_API_KEY: 'test-key', IJINFO_HMAC_SECRET: 'test-secret', IJINFO_DEMO_CI_KEY_B64: key.toString('base64') };
+  const env = { NODE_ENV: 'development', IJINFO_BASE_URL: 'http://127.0.0.1:8000', IJINFO_API_KEY: 'test-key', IJINFO_HMAC_SECRET: 'test-secret' };
   assert.equal(partnerConfigured(env), true);
   assert.equal(partnerPartiallyConfigured({ IJINFO_BASE_URL: env.IJINFO_BASE_URL }), true);
-  assert.equal(mockCi(demoPerson.rrn, env).length, 88);
+  // CI 는 IJ-info 안에서만 만들어진다. RKX 에는 CI 생성키가 없다.
+  assert.equal(inboxUrl(env), 'http://127.0.0.1:8000/test-inbox/');
+  assert.equal(inboxUrl({ ...env, IJINFO_INBOX_URL: 'http://127.0.0.1:8000/test-inbox/' }), 'http://127.0.0.1:8000/test-inbox/');
   const result = await ijinfoRequest('POST', '/verifications', { mode: 'DIRECT', client_user_ref: 'rkx-test' }, { env, fetchImpl: async (url, options) => {
     assert.equal(url, 'http://127.0.0.1:8000/api/v1/verifications');
     const { 'X-Timestamp': time, 'X-Signature': signature } = options.headers;

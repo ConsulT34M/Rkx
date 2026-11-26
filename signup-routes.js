@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { passwordIssues } from './auth-policy.js';
 import {
   publicDemoPerson, samplePersonByName, partnerConfigured, partnerPartiallyConfigured,
-  sampleMatches, parseDemoImage, mockCi, ijinfoRequest
+  sampleMatches, parseDemoImage, inboxUrl, ijinfoRequest
 } from './identity-service.js';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -70,7 +70,16 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
     }
     const mode = partnerConfigured() ? 'ijinfo' : 'demo';
     const reference = `rkx-signup-${req.signup.id}-${crypto.randomUUID()}`;
-    await pool.execute("UPDATE signup_requests SET mode=?,stage='phone',client_user_ref=?,provider_reference=NULL,phone=NULL,code_hash=NULL,code_expires_at=NULL WHERE id=?", [mode, reference, req.signup.id]);
+    // 휴대폰 본인확인부터 IJ-info 를 거치므로 인증 건을 먼저 만든다(IA-01).
+    let providerReference = null;
+    if (mode === 'ijinfo') {
+      try {
+        const created = await ijinfoRequest('POST', '/verifications', { client_user_ref: reference, mode: 'DIRECT' });
+        providerReference = created.verification_id;
+        if (!/^[0-9a-f-]{36}$/i.test(providerReference || '')) return problem(res, 'IJ-info 응답을 확인할 수 없습니다.', 502);
+      } catch { return problem(res, 'IJ-info에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.', 502); }
+    }
+    await pool.execute("UPDATE signup_requests SET mode=?,stage='phone',client_user_ref=?,provider_reference=?,phone=NULL,code_hash=NULL,code_expires_at=NULL WHERE id=?", [mode, reference, providerReference, req.signup.id]);
     res.json({ mode, stage: 'phone' });
   }));
 
@@ -82,29 +91,66 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
         !sampleMatches({ name: req.body.name, phone: req.body.phone, rrn: req.body.rrn }, sample)) {
       return problem(res, '입력한 정보로 본인확인을 완료할 수 없습니다. 성명·주민등록번호·휴대폰번호를 확인해 주세요.');
     }
+    const phone = req.body.phone.replace(/\D/g, '');
+
+    // 인증번호는 IJ-info 가 만들어 이용자 휴대폰으로 보낸다(IA-23).
+    // RKX 는 인증번호를 받지 않는다 — 받으면 그 자체가 오라클이다.
+    if (record.mode === 'ijinfo') {
+      let issued;
+      try {
+        issued = await ijinfoRequest('POST', `/verifications/${record.provider_reference}/phone/otp`, {
+          name: req.body.name, phone_number: phone, resend: req.body.resend === true
+        });
+      } catch (error) {
+        if (error.status === 429) return problem(res, '잠시 후 다시 요청해 주세요. (60초 제한)', 429);
+        if (error.status === 409 && error.reasonCode) {
+          await pool.execute("UPDATE signup_requests SET stage='failed',status='rejected',password_hash='',token_hash=NULL,completed_at=NOW() WHERE id=?", [record.id]);
+          return problem(res, `본인확인 실패 (${error.reasonCode})`, 409);
+        }
+        if (error.status === 400) return problem(res, error.message, 400);
+        return problem(res, 'IJ-info 휴대폰 본인확인에 연결할 수 없습니다.', 502);
+      }
+      await pool.execute("UPDATE signup_requests SET stage='phone_code',phone=? WHERE id=?", [phone, record.id]);
+      return res.json({
+        stage: 'phone_code', phoneMask: issued.phone_mask, inboxUrl: inboxUrl(),
+        expiresInSeconds: 180, notice: '이용자 휴대폰으로 인증번호를 보냈습니다. 휴대폰 문자 수신함에서 확인해 주세요.'
+      });
+    }
+
     const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');
     const salt = crypto.randomBytes(32).toString('hex');
-    await pool.execute("UPDATE signup_requests SET stage='phone_code',phone=?,code_hash=?,code_expires_at=DATE_ADD(NOW(), INTERVAL 3 MINUTE) WHERE id=?", [req.body.phone.replace(/\D/g, ''), `${salt}:${hash(salt + code)}`, record.id]);
-    res.json({ stage: 'phone_code', demoCode: code, expiresInSeconds: 180, notice: '실습용 코드입니다. 실제 SMS가 전송되지 않습니다.' });
+    await pool.execute("UPDATE signup_requests SET stage='phone_code',phone=?,code_hash=?,code_expires_at=DATE_ADD(NOW(), INTERVAL 3 MINUTE) WHERE id=?", [phone, `${salt}:${hash(salt + code)}`, record.id]);
+    res.json({ stage: 'phone_code', demoCode: code, expiresInSeconds: 180, notice: '연동 설정이 없어 로컬 모의 코드로 진행합니다.' });
   }));
 
   app.post('/api/signup/identity/phone/confirm', route(pending), limited, route(async (req, res) => {
     const record = req.signup;
     if (!active(res, record, 'phone_code')) return;
     const code = String(req.body?.code || '');
-    if (!/^\d{6}$/.test(code) || !record.code_hash || !record.phone ||
-        new Date(record.code_expires_at).getTime() <= Date.now()) return problem(res, '인증번호가 올바르지 않거나 만료되었습니다.');
-    const [salt, expected] = record.code_hash.split(':');
-    if (!crypto.timingSafeEqual(Buffer.from(hash(salt + code)), Buffer.from(expected))) return problem(res, '인증번호가 올바르지 않습니다.');
-    let providerReference = null;
+    if (!/^\d{6}$/.test(code) || !record.phone) return problem(res, '인증번호 6자리를 입력해 주세요.');
+
+    // IJ-info 가 발급한 인증번호는 IJ-info 가 검증한다(IA-24). 맞으면 통신사에서 CI 를
+    // 받아 IJ-info 안에 보관한다 — RKX 로는 넘어오지 않는다.
     if (record.mode === 'ijinfo') {
       try {
-        const result = await ijinfoRequest('POST', '/verifications', { client_user_ref: record.client_user_ref, mode: 'DIRECT' });
-        providerReference = result.verification_id;
-        if (!/^[0-9a-f-]{36}$/i.test(providerReference || '')) return problem(res, 'IJ-info 응답을 확인할 수 없습니다.', 502);
-      } catch { return problem(res, 'IJ-info에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.', 502); }
+        await ijinfoRequest('POST', `/verifications/${record.provider_reference}/phone/confirm`, { code });
+      } catch (error) {
+        if (error.status === 409 && error.reasonCode) {
+          await pool.execute("UPDATE signup_requests SET stage='failed',status='rejected',password_hash='',token_hash=NULL,completed_at=NOW() WHERE id=?", [record.id]);
+          return problem(res, `본인확인 실패 (${error.reasonCode})`, 409);
+        }
+        if (error.status === 400) return problem(res, error.message, 400);
+        return problem(res, 'IJ-info 휴대폰 본인확인에 연결할 수 없습니다.', 502);
+      }
+      const [moved] = await pool.execute("UPDATE signup_requests SET stage='id_card' WHERE id=? AND stage='phone_code'", [record.id]);
+      if (!moved.affectedRows) return problem(res, '가입 절차가 변경되었습니다. 다시 진행해 주세요.', 409);
+      return res.json({ stage: 'id_card', mode: record.mode });
     }
-    const [updated] = await pool.execute("UPDATE signup_requests SET stage='id_card',code_hash=NULL,code_expires_at=NULL,provider_reference=? WHERE id=? AND stage='phone_code' AND code_hash=?", [providerReference, record.id, record.code_hash]);
+
+    if (!record.code_hash || new Date(record.code_expires_at).getTime() <= Date.now()) return problem(res, '인증번호가 올바르지 않거나 만료되었습니다.');
+    const [salt, expected] = record.code_hash.split(':');
+    if (!crypto.timingSafeEqual(Buffer.from(hash(salt + code)), Buffer.from(expected))) return problem(res, '인증번호가 올바르지 않습니다.');
+    const [updated] = await pool.execute("UPDATE signup_requests SET stage='id_card',code_hash=NULL,code_expires_at=NULL WHERE id=? AND stage='phone_code' AND code_hash=?", [record.id, record.code_hash]);
     if (!updated.affectedRows) return problem(res, '인증번호가 변경되었습니다. 다시 확인해 주세요.', 409);
     res.json({ stage: 'id_card', mode: record.mode });
   }));
@@ -121,7 +167,7 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
       try {
         const result = await ijinfoRequest('POST', `/verifications/${record.provider_reference}/id-card`, {
           name: sample.name, rrn: sample.rrn, issue_date: sample.issue_date,
-          ci: mockCi(sample.rrn), filename: `id_card.${image.filename.endsWith('.png') ? 'png' : 'jpg'}`, image: image.base64,
+          filename: `id_card.${image.filename.endsWith('.png') ? 'png' : 'jpg'}`, image: image.base64,
           consents: ['collect', 'uid', 'carrier_terms', 'biometric'].map(type => ({ type, version: 'v1.0' }))
         });
         if (result.status === 'FAILED') {
