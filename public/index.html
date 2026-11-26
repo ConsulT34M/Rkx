@@ -138,6 +138,9 @@
     <div class="chat-header"><div><strong id="aiChatTitle">AI 채팅 상담</strong><span>질문은 OpenAI에 전달되고 대화는 말결에 저장됩니다.</span></div>
       <button id="aiChatClose" aria-label="AI 채팅 닫기">×</button></div>
     <div class="chat-messages" id="aiMessages" role="log" aria-label="AI 대화"></div>
+    <div class="ai-outcome-actions" id="aiOutcomeActions" hidden>
+      <button type="button" id="aiResolved">해결됐어요</button><button type="button" id="aiHandoff">상담원 연결</button>
+    </div>
     <div class="ai-chat-tools"><span id="aiChatStatus" role="status"></span><button type="button" id="aiChatNew">새 대화</button></div>
     <form id="aiChatForm" class="chat-form"><input name="body" maxlength="2000" placeholder="질문을 입력하세요" aria-label="AI 채팅 메시지" required><button type="submit">전송</button></form>
   </section>
@@ -150,7 +153,7 @@
     <p id="voice-state" role="status">시작 버튼을 누르고 마이크 사용을 허용해 주세요.</p>
     <p id="voice-recording-state" role="status" hidden></p><p id="voice-ticket" role="status" hidden></p>
     <audio id="voice-ringback" src="/api/support/assets/ringback" preload="none" loop hidden></audio><audio id="voice-audio" autoplay controls hidden aria-label="AI 답변 재생"></audio>
-    <button class="button button-orange" id="voice-start" type="button" disabled>음성 상담 시작</button><button class="button button-dark" id="voice-stop" type="button" hidden>통화 종료</button>
+    <button class="button button-orange" id="voice-start" type="button" disabled>음성 상담 시작</button><button class="button button-orange" id="voice-resolved" type="button" title="해결로 기록하고 통화 종료" hidden>해결됐어요</button><button class="button button-dark" id="voice-stop" type="button" hidden>통화 종료</button>
   </dialog>
   <section class="chat-panel hidden" id="chatPanel" aria-label="상담 채팅"><div class="chat-header"><div><strong>말결 연계 상담 채팅</strong><span><i class="live-dot"></i><output id="chatStatus">메시지를 남겨주세요</output></span></div><button id="closeChat" aria-label="채팅 닫기">×</button></div><div class="chat-messages" id="chatMessages"><div class="chat-empty">로그인 후 상담원과 채팅을 시작할 수 있습니다.</div></div><form id="chatForm" class="chat-form"><input name="body" maxlength="2000" placeholder="메시지를 입력하세요" aria-label="채팅 메시지"><button type="submit">전송</button></form></section>
 

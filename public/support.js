@@ -7,6 +7,7 @@ const voiceDialog = $('#voice-dialog');
 let pendingChannel = null;
 let supportView = 0;
 let aiChatId = null;
+let aiSnapshot = null;
 let pendingAiMessage = null;
 let menuPinned = false;
 const voiceScripts = new Map();
@@ -32,6 +33,8 @@ function supportReset() {
   ++supportView;
   pendingChannel = null;
   aiChatId = null;
+  aiSnapshot = null;
+  $('#aiOutcomeActions').hidden = true;
   pendingAiMessage = null;
   setSupportMenu(false);
   aiPanel.classList.add('hidden');
@@ -51,6 +54,7 @@ function supportResume() {
 }
 
 function renderAiChat(chat) {
+  aiSnapshot = chat;
   aiChatId = chat.chat_id || aiChatId || chatMessageId();
   const log = $('#aiMessages');
   log.replaceChildren();
@@ -68,22 +72,34 @@ function renderAiChat(chat) {
     bubble('AI 상담원', turn.answer, false);
   }
   log.scrollTop = log.scrollHeight;
-  aiForm.elements.body.disabled = !chat.enabled;
-  aiForm.querySelector('button').disabled = !chat.enabled;
-  $('#aiChatStatus').textContent = chat.enabled ? '' : 'AI 채팅 상담 운영이 중지되었습니다.';
+  $('#aiOutcomeActions').hidden = !chat.turns.length || chat.outcome === 'RESOLVED';
+  $('#aiResolved').hidden = chat.outcome === 'HANDOFF';
+  $('#aiHandoff').textContent = chat.outcome === 'HANDOFF' ? '상담원 채팅 열기' : '상담원 연결';
+  $('#aiChatStatus').textContent = chat.outcome === 'RESOLVED' ? '해결로 기록했어요.' :
+    chat.outcome === 'HANDOFF' ? '상담원 채팅으로 접수했어요.' : chat.enabled ? '' : 'AI 채팅 상담 운영이 중지되었습니다.';
+  setAiBusy(false);
+}
+
+function setAiBusy(busy) {
+  const disabled = busy || !aiSnapshot?.enabled || Boolean(aiSnapshot?.outcome);
+  aiForm.elements.body.disabled = disabled;
+  aiForm.querySelector('button').disabled = disabled;
+  $('#aiResolved').disabled = busy;
+  $('#aiHandoff').disabled = busy;
+  $('#aiChatNew').disabled = busy;
 }
 
 async function openAiChat(fresh = false) {
   const view = ++supportView;
   aiChatId = null;
+  aiSnapshot = null;
   pendingAiMessage = null;
   aiForm.reset();
   aiPanel.classList.remove('hidden');
   supportLauncher.classList.add('hidden');
   $('#aiMessages').replaceChildren();
-  aiForm.elements.body.disabled = true;
-  aiForm.querySelector('button').disabled = true;
-  $('#aiChatNew').disabled = true;
+  $('#aiOutcomeActions').hidden = true;
+  setAiBusy(true);
   $('#aiChatStatus').textContent = '대화를 불러오는 중…';
   try {
     const chat = await api('/api/support/ai-chat' + (fresh ? '?new=1' : ''));
@@ -103,9 +119,7 @@ aiForm.addEventListener('submit', async event => {
   const body = input.value.trim();
   if (!body || !aiChatId || input.disabled) return;
   if (pendingAiMessage?.body !== body) pendingAiMessage = { chat_id: aiChatId, request_id: chatMessageId(), body };
-  input.disabled = true;
-  aiForm.querySelector('button').disabled = true;
-  $('#aiChatNew').disabled = true;
+  setAiBusy(true);
   $('#aiChatStatus').textContent = 'AI가 답변을 작성하고 있어요…';
   try {
     const chat = await api('/api/support/ai-chat/messages', { method: 'POST', body: pendingAiMessage });
@@ -115,16 +129,33 @@ aiForm.addEventListener('submit', async event => {
     renderAiChat(chat);
   } catch (error) {
     if (view !== supportView) return;
-    input.disabled = false;
-    aiForm.querySelector('button').disabled = false;
     $('#aiChatStatus').textContent = error.message;
   } finally {
     if (view === supportView) {
-      $('#aiChatNew').disabled = false;
+      setAiBusy(false);
       input.focus();
     }
   }
 });
+
+async function finishAiChat(handoff) {
+  if (!aiSnapshot?.chat_id) return;
+  if (handoff && aiSnapshot.outcome === 'HANDOFF') return openChat();
+  const view = supportView;
+  setAiBusy(true);
+  try {
+    await api('/api/support/ai-chat/' + aiChatId + (handoff ? '/handoff' : '/resolve'), { method: 'POST', body: {} });
+    if (view !== supportView) return;
+    if (handoff) openChat();
+    else renderAiChat({ ...aiSnapshot, outcome: 'RESOLVED' });
+  } catch (error) {
+    if (view === supportView) $('#aiChatStatus').textContent = error.message;
+  } finally {
+    if (view === supportView) setAiBusy(false);
+  }
+}
+$('#aiResolved').addEventListener('click', () => finishAiChat(false));
+$('#aiHandoff').addEventListener('click', () => finishAiChat(true));
 
 function loadVoiceScript(name) {
   if (!voiceScripts.has(name)) {

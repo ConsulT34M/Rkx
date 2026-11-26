@@ -301,11 +301,9 @@ app.post('/api/partner/status-callback', route(async (req, res) => {
 }));
 
 app.get('/api/chat', requireUser, role('customer'), route(async (req, res) => {
+  if (mkChat) return res.json(await mkChat.read(req.user.id));
   const [rows] = await pool.execute('SELECT id,sender,body,created_at FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT 100', [req.user.id]);
-  const previous = rows.reverse();
-  if (!mkChat) return res.json({ messages: previous });
-  const chat = await mkChat.read(req.user.id);
-  res.json({ ...chat, messages: [...previous.map(row => ({ ...row, archived: true })), ...chat.messages] });
+  res.json({ messages: rows.reverse() });
 }));
 app.post('/api/chat', requireUser, role('customer'), route(async (req, res) => {
   const body = clean(req.body.body, 2000);

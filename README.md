@@ -71,7 +71,9 @@ npm run accounts:clear -- --yes
 
 오른쪽 아래 상담 버튼을 마우스로 가리키거나 누르면 세 채널이 열립니다. ‘AI 채팅 상담’의 대화는 MK 관리자 ‘AI → AI 채팅’에 저장됩니다. ‘상담원 채팅 문의’는 MK의 상담 운영 대기열로 연결됩니다. ‘전화 상담’은 고객이 마이크 사용을 허용하면 MK를 통해 브라우저에서 AI와 통화하며, 연결 기록은 ‘AI → AI 통화’에서 확인합니다. AI 사용 여부와 인사말은 MK의 ‘AI 설정’에서 관리합니다.
 
-RKX의 채팅창과 MK 상담원 포털은 같은 WEB 상담방을 사용합니다. 기존 RKX DB에는 `migration-007.sql`을 적용하고, RKX 서버의 `.env`에 `MK_BASE_URL`과 `MK_PARTNER_TOKEN`을 설정합니다. 토큰 값은 MK 서버의 `PARTNER_TOKEN`과 같아야 합니다. 고객이 채팅창을 열면 MK 대기열에 접수되고, MK 상담원이 수락해 답하면 RKX에 표시됩니다. 종결된 방에서는 대화를 읽거나 ‘새 상담’을 시작할 수 있습니다.
+AI 답변 아래에서 ‘해결됐어요’를 누르면 해결을 기록하고, ‘상담원 연결’을 누르면 실제 상담원 채팅방을 엽니다. 음성 상담에서도 AI가 답변한 뒤 ‘해결됐어요’를 눌러 통화를 마칠 수 있습니다. 일반 종료는 MK 대시보드에 결과 미확인으로 남습니다.
+
+RKX의 채팅창과 MK 상담원 포털은 같은 WEB 상담방을 사용합니다. 기존 RKX DB에는 `migration-007.sql`을 적용하고, RKX 서버의 `.env`에 `MK_BASE_URL`과 `MK_PARTNER_TOKEN`을 설정합니다. 토큰 값은 MK 서버의 `PARTNER_TOKEN`과 같아야 합니다. 고객이 채팅창을 열면 MK 대기열에 접수되고, MK 상담원이 수락해 답하면 RKX에 표시됩니다. 상담원이 상담을 종료하면 고객 채팅창에는 종료 안내만 표시됩니다. 고객이 ‘새 상담’을 누르면 빈 상담방이 열립니다.
 
 로컬 MK의 기본 주소는 `https://127.0.0.1:8443`입니다. 자체 서명 인증서를 쓰면 MK Nginx의 공개 `cert.pem`을 RKX의 `.local/mk-tls/cert.pem`에 두고 `MK_CA_FILE=.local/mk-tls/cert.pem`을 설정합니다. RKX를 Docker Desktop에서 실행할 때는 `MK_DOCKER_BASE_URL=https://host.docker.internal:8443`을 사용합니다.
 

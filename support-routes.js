@@ -25,11 +25,15 @@ export function supportRoutes(mk, route) {
   }
   router.get('/ai-chat', route((req, res) => relay(req, res, '/partner/ai-chat' + (req.query.new === '1' ? '?new=1' : ''))));
   router.post('/ai-chat/messages', route((req, res) => relay(req, res, '/partner/ai-chat/messages')));
+  router.post('/ai-chat/:id/resolve', route((req, res) => relay(req, res, '/partner/ai-chat/' + req.params.id + '/resolve')));
+  router.post('/ai-chat/:id/handoff', route(async (req, res) => {
+    res.json({ caseId: await mk.handoffChat(req.user.id, req.params.id) });
+  }));
   router.get('/availability', route(async (_req, res) => res.json((await mk.availability()).data)));
   const sessions = '/inquiry/voice/sessions';
   router.post('/voice/sessions', route((req, res) => relay(req, res, sessions)));
   router.param('id', (req, res, next, id) => isUuid(id) ? next() : res.sendStatus(400));
-  for (const action of ['connected', 'end', 'handoff']) {
+  for (const action of ['connected', 'end', 'handoff', 'resolve']) {
     router.post('/voice/sessions/:id/' + action, route((req, res) => relay(req, res, sessions + '/' + req.params.id + '/' + action)));
   }
   router.post('/voice/sessions/:id/recording/:offset', express.raw({ type: 'application/octet-stream', limit: '64kb' }),

@@ -14,7 +14,7 @@ function chatMessageId() {
 }
 
 function renderMessages(target, messages, mineRole = 'customer') {
-  target.innerHTML = messages.length ? messages.map(m => `<div class="chat-bubble ${m.sender === mineRole ? 'mine' : ''}">${escapeHtml(m.body)}<small>${m.archived ? '이전 RKX 상담 · ' : ''}${m.sender === 'partner' ? '말결 상담원' : '고객'} · ${when(m.created_at)}</small></div>`).join('') : '<div class="chat-empty">첫 메시지를 남겨주세요.</div>';
+  target.innerHTML = messages.length ? messages.map(m => `<div class="chat-bubble ${m.sender === mineRole ? 'mine' : ''}">${escapeHtml(m.body)}<small>${m.sender === 'partner' ? '말결 상담원' : '고객'} · ${when(m.created_at)}</small></div>`).join('') : '<div class="chat-empty">첫 메시지를 남겨주세요.</div>';
   target.scrollTop = target.scrollHeight;
 }
 async function loadChat() {
@@ -29,13 +29,18 @@ async function loadChat() {
       chat = await api('/api/chat');
     }
     if (read !== chatRead || userId !== state.user?.id) return;
-    currentChatCase = chat.caseId || null;
     chatReadOnly = chat.readOnly === true;
+    if (chatReadOnly || (currentChatCase && currentChatCase !== chat.caseId)) {
+      $('#chatForm').reset();
+      pendingMessage = null;
+    }
+    currentChatCase = chat.caseId || null;
     $('#chatForm input').disabled = chatReadOnly;
     $('#chatForm button').textContent = chatReadOnly ? '새 상담' : '전송';
     const labels = { QUEUED: '상담원 연결 대기 중', IN_PROGRESS: '상담원 연결됨', CLOSED: '상담이 종료되었습니다' };
     $('#chatStatus').textContent = labels[chat.status] || '메시지를 남겨주세요';
-    renderMessages($('#chatMessages'), chat.messages);
+    if (chatReadOnly) $('#chatMessages').replaceChildren();
+    else renderMessages($('#chatMessages'), chat.messages);
   } catch (error) {
     if (read === chatRead && userId === state.user?.id) $('#chatStatus').textContent = error.message;
   } finally {
@@ -54,13 +59,16 @@ function closeChat() {
   clearTimeout(state.chatTimer);
   $('#chatPanel').classList.add('hidden');
   if (!state.user || state.user.role === 'customer') $('#chatLauncher').classList.remove('hidden');
-  currentChatCase = null;
   chatReadOnly = false;
   $('#chatForm input').disabled = false;
   $('#chatForm button').textContent = '전송';
   $('#chatStatus').textContent = '메시지를 남겨주세요';
   $('#chatMessages').replaceChildren();
-  if (!state.user) { $('#chatForm').reset(); pendingMessage = null; }
+  if (!state.user) {
+    currentChatCase = null;
+    $('#chatForm').reset();
+    pendingMessage = null;
+  }
 }
 async function submitChat(event) {
   event.preventDefault(); if (!state.user) return openAuth('login');

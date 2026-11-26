@@ -4,6 +4,68 @@ import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { createMkChat } from '../mk-chat.js';
 
+test('고객이 종료된 방을 다시 조회하면 새 상담에 필요한 방 ID만 유지하고 대화는 비운다', async t => {
+  const room = { case_id: randomUUID(), subject_ref: randomUUID() };
+  const items = [{ message_id: '1', author_role: 'AGENT', body: '상담 답변', sent_at: '2026-01-01T00:00:00Z' }];
+  let closed = false;
+  const server = createServer((req, res) => {
+    if (req.url === '/chat/sessions') {
+      res.setHeader('Set-Cookie', 'tm_chat=fixture; HttpOnly');
+      return res.end(JSON.stringify({ case_id: room.case_id, expires_at: new Date(Date.now() + 60000).toISOString() }));
+    }
+    if (req.url === '/cases/' + room.case_id + '/entry-codes') {
+      return res.end(JSON.stringify({ case_id: room.case_id, entry_code: 'entry' }));
+    }
+    if (req.method === 'GET' && req.url === '/cases/' + room.case_id + '/messages') {
+      return res.end(JSON.stringify({ items, status: closed ? 'CLOSED' : 'IN_PROGRESS', read_only: closed }));
+    }
+    res.writeHead(404).end();
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const pool = { execute: async sql => {
+    assert.match(sql, /^SELECT /);
+    return [[room]];
+  } };
+  const chat = createMkChat(pool, { MK_BASE_URL: 'http://127.0.0.1:' + server.address().port, MK_PARTNER_TOKEN: 'fixture' });
+  assert.deepEqual((await chat.read(1)).messages.map(m => m.body), ['상담 답변']);
+  closed = true;
+  assert.deepEqual(await chat.read(1), { caseId: room.case_id, readOnly: true, status: 'CLOSED', messages: [] });
+});
+
+test('AI 전환은 실제 접수 방을 열고 이전 전환 재시도가 현재 방을 덮어쓰지 않는다', async t => {
+  const first = randomUUID(), next = randomUUID(), subject = randomUUID(), oldIntake = randomUUID();
+  const oldCase = randomUUID(), newCase = randomUUID();
+  let room = { subject_ref: subject, intake_id: oldIntake, case_id: oldCase };
+  const requests = [];
+  const server = createServer(async (req, res) => {
+    let raw = '';
+    for await (const part of req) raw += part;
+    const intake = JSON.parse(raw).intake_request_id;
+    requests.push({ path: req.url, subject: req.headers['x-support-subject'], intake });
+    res.setHeader('Content-Type', 'application/json');
+    if (req.url.includes(first)) return res.end(JSON.stringify({ case_id: oldCase, intake_request_id: oldIntake }));
+    if (intake === oldIntake) return res.writeHead(409).end(JSON.stringify({ code: 'AI_HANDOFF_ROOM_CLOSED', message: '종결' }));
+    res.end(JSON.stringify({ case_id: newCase, intake_request_id: intake }));
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const pool = { execute: async (sql, args) => {
+    if (sql.startsWith('SELECT')) return [[{ ...room }]];
+    if (args[2] !== room.intake_id) return [{ affectedRows: 0 }];
+    if (sql.includes('SET intake_id=')) room = { ...room, intake_id: args[0], case_id: null };
+    else room.case_id = args[0];
+    return [{ affectedRows: 1 }];
+  } };
+  const mk = createMkChat(pool, { MK_BASE_URL: 'http://127.0.0.1:' + server.address().port, MK_PARTNER_TOKEN: 'fixture' });
+  assert.equal(await mk.handoffChat(1, first), oldCase);
+  assert.equal(await mk.handoffChat(1, next), newCase);
+  assert.equal(await mk.handoffChat(1, first), oldCase);
+  assert.equal(room.case_id, newCase);
+  assert.deepEqual(requests.map(r => r.intake), [oldIntake, oldIntake, room.intake_id, room.intake_id]);
+  assert.ok(requests.every(r => r.subject === subject && r.path.startsWith('/partner/ai-chat/')));
+});
+
 test('RKX AI·음성 요청은 고객 식별자를 공유하고 상담원 티켓을 만들지 않는다', async t => {
   const subject = randomUUID(), voiceId = randomUUID();
   const calls = [];

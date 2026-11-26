@@ -98,12 +98,36 @@ export function createMkChat(pool, env = process.env) {
         [randomUUID(), userId, room.intake_id]);
       throw new MkChatError('이전 상담이 삭제되었습니다. 다시 연결해 주세요.', 409);
     }
-    if (!isUuid(data?.case_id)) throw new MkChatError();
-    const [saved] = await pool.execute('UPDATE mk_chat_rooms SET case_id=? WHERE user_id=? AND intake_id=?', [data.case_id, userId, room.intake_id]);
-    if (!saved.affectedRows && (await storedRoom(userId))?.case_id !== data.case_id) {
+    return linkRoom(userId, room, data?.case_id);
+  }
+
+  async function linkRoom(userId, room, caseId) {
+    if (!isUuid(caseId)) throw new MkChatError();
+    const [saved] = await pool.execute('UPDATE mk_chat_rooms SET case_id=? WHERE user_id=? AND intake_id=?', [caseId, userId, room.intake_id]);
+    if (!saved.affectedRows && (await storedRoom(userId))?.case_id !== caseId) {
       throw new MkChatError('상담방이 변경되었습니다. 다시 연결해 주세요.', 409);
     }
-    return { ...room, case_id: data.case_id };
+    return { ...room, case_id: caseId };
+  }
+
+  async function handoffChat(userId, chatId) {
+    let room = await identityFor(userId);
+    const submit = () => request('/partner/ai-chat/' + chatId + '/handoff',
+      { ...partner, 'X-Support-Subject': room.subject_ref }, { intake_request_id: room.intake_id }, { support: true });
+    let result;
+    try {
+      result = await submit();
+    } catch (error) {
+      if (error.code !== 'AI_HANDOFF_ROOM_CLOSED') throw error;
+      await pool.execute('UPDATE mk_chat_rooms SET intake_id=?,case_id=NULL WHERE user_id=? AND intake_id=?',
+        [randomUUID(), userId, room.intake_id]);
+      room = await storedRoom(userId);
+      result = await submit();
+    }
+    if (!isUuid(result.data?.case_id) || !isUuid(result.data.intake_request_id)) throw new MkChatError();
+    // An old handoff retry must not switch the customer's current room back to a previous ticket.
+    if (room.intake_id === result.data.intake_request_id) await linkRoom(userId, room, result.data.case_id);
+    return result.data.case_id;
   }
 
   async function sessionFor(room) {
@@ -142,7 +166,7 @@ export function createMkChat(pool, env = process.env) {
       if (!Array.isArray(data?.items)) throw new MkChatError();
       return {
         caseId: room.case_id, readOnly: data.read_only, status: data.status,
-        messages: data.items.slice(-100).map(item => ({
+        messages: data.read_only ? [] : data.items.slice(-100).map(item => ({
           id: item.message_id, sender: item.author_role === 'AGENT' ? 'partner' : 'customer', body: item.body, created_at: item.sent_at
         }))
       };
@@ -153,6 +177,7 @@ export function createMkChat(pool, env = process.env) {
   }
 
   return {
+    handoffChat,
     asset(path) { return request(path, {}, undefined, { binary: true }); },
     availability() { return request('/partner/ai-chat/availability', partner, undefined, { support: true }); },
     async support(userId, path, payload, headers = {}) {
