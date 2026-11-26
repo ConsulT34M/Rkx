@@ -74,7 +74,8 @@ app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'");
+  const localInboxFrame = process.env.NODE_ENV === 'production' ? '' : " frame-src 'self' http://localhost:8000 http://127.0.0.1:8000;";
+  res.setHeader('Content-Security-Policy', `default-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none';${localInboxFrame}`);
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
@@ -539,3 +540,4 @@ app.use((error, _req, res, _next) => {
   res.status(error.type === 'entity.too.large' ? 413 : 500).json({ error: error.type === 'entity.too.large' ? '파일 크기가 제한을 초과했습니다.' : '서버 오류가 발생했습니다.' });
 });
 app.listen(port, () => console.log(`RKX running at ${origin}`));
+
