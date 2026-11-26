@@ -100,12 +100,14 @@
       const code = $('#identityDemoCode');
       const frame = $('#identityInboxFrame');
       const notice = $('#identityCodeNotice');
+      const sender = $('#identityMessageSender');
       notice.textContent = '';
       if (result.demoCode) {
         sessionStorage.setItem('rkx_demo_identity_code', result.demoCode);
         code.textContent = result.demoCode;
         notice.append('인증번호 ', code, '를 왼쪽 화면에 입력해 주세요.');
         notice.hidden = false;
+        sender.hidden = false;
         frame.hidden = true;
         frame.src = 'about:blank';
         return;
@@ -118,6 +120,7 @@
       if (!local) {
         notice.textContent = '인증번호를 휴대폰 수신함에서 확인해 주세요.';
         notice.hidden = false;
+        sender.hidden = false;
         frame.hidden = true;
         return;
       }
@@ -131,6 +134,7 @@
       frame.src = inbox.href;
       frame.hidden = false;
       notice.hidden = true;
+      sender.hidden = true;
     }
 
     $('#identityCodeForm').addEventListener('submit', run(async event => {
