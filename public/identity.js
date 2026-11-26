@@ -121,6 +121,7 @@
         frame.hidden = true;
         return;
       }
+      frame.classList.toggle('requires-registration', !result.previewToken);
       // 같은 사이트의 별도 포트를 써야 브라우저가 IJ-info 기기 세션을 iframe에 보낸다.
       inbox.hostname = window.location.hostname;
       inbox.pathname = '/test-inbox/widget';
