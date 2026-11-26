@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { captchaNeeded, createCaptcha, validCaptchaId, verifyCaptchaAnswer } from './captcha.js';
 import { mountSignupRoutes } from './signup-routes.js';
 import { mountIdentityRoutes } from './identity-routes.js';
+import { createMkChat, isUuid, MkChatError } from './mk-chat.js';
 
 const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
@@ -21,6 +22,7 @@ const pool = mysql.createPool({
   connectionLimit: 10, charset: 'utf8mb4'
 });
 const origin = process.env.APP_ORIGIN || 'http://localhost:3000';
+const mkChat = createMkChat(pool);
 const port = Number(process.env.PORT || 3000);
 const allowedOrigins = new Set([new URL(origin).origin]);
 for (const configured of (process.env.APP_ALLOWED_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean)) {
@@ -298,15 +300,29 @@ app.post('/api/partner/status-callback', route(async (req, res) => {
 
 app.get('/api/chat', requireUser, role('customer'), route(async (req, res) => {
   const [rows] = await pool.execute('SELECT id,sender,body,created_at FROM chat_messages WHERE user_id=? ORDER BY id DESC LIMIT 100', [req.user.id]);
-  res.json({ messages: rows.reverse() });
+  const previous = rows.reverse();
+  if (!mkChat) return res.json({ messages: previous });
+  const chat = await mkChat.read(req.user.id);
+  res.json({ ...chat, messages: [...previous.map(row => ({ ...row, archived: true })), ...chat.messages] });
 }));
 app.post('/api/chat', requireUser, role('customer'), route(async (req, res) => {
   const body = clean(req.body.body, 2000);
   if (!body) return res.status(400).json({ error: '메시지를 입력해 주세요.' });
+  if (mkChat) {
+    const { caseId, clientMessageId = crypto.randomUUID() } = req.body;
+    if (!isUuid(clientMessageId) || (caseId != null && !isUuid(caseId))) return res.status(400).json({ error: '채팅 요청 번호를 확인해 주세요.' });
+    await mkChat.send(req.user.id, caseId, clientMessageId, body);
+    return res.status(201).json({ partnerStatus: 'sent' });
+  }
   const [insert] = await pool.execute("INSERT INTO chat_messages (user_id,sender,body) VALUES (?,'customer',?)", [req.user.id, body]);
   const partnerStatus = await forwardToMk(process.env.MK_CHAT_WEBHOOK_URL, { event: 'chat.message', customerKey: req.user.customer_key, messageId: insert.insertId, body });
   await pool.execute('UPDATE chat_messages SET partner_status=? WHERE id=?', [partnerStatus, insert.insertId]);
   res.status(201).json({ partnerStatus });
+}));
+app.post('/api/chat/open', requireUser, role('customer'), route(async (req, res) => {
+  const caseId = req.body?.caseId;
+  if (!mkChat || (caseId != null && !isUuid(caseId))) return res.status(400).json({ error: '상담방을 다시 확인해 주세요.' });
+  res.json({ caseId: await mkChat.open(req.user.id, caseId) });
 }));
 app.post('/api/partner/chat-callback', route(async (req, res) => {
   if (!signed(req, process.env.MK_WEBHOOK_SECRET)) return res.status(401).end();
@@ -516,6 +532,7 @@ app.get('/api/health', route(async (_req, res) => { await pool.query('SELECT 1')
 app.use(express.static(path.join(root, 'public')));
 app.get('*', (_req, res) => res.sendFile(path.join(root, 'public', 'index.html')));
 app.use((error, _req, res, _next) => {
+  if (error instanceof MkChatError) return res.status(error.status).json({ error: error.message });
   console.error(error);
   res.status(error.type === 'entity.too.large' ? 413 : 500).json({ error: error.type === 'entity.too.large' ? '파일 크기가 제한을 초과했습니다.' : '서버 오류가 발생했습니다.' });
 });

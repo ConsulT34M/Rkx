@@ -1,0 +1,47 @@
+services:
+  app:
+    build: .
+    env_file: .env
+    environment:
+      PORT: "3000"
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: rkx_consulting
+      DB_USER: ${DB_USER:-rkx_app}
+      DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      MK_BASE_URL: ${MK_DOCKER_BASE_URL:-${MK_BASE_URL:-}}
+    ports:
+      - "127.0.0.1:${PORT:-3000}:3000"
+    volumes:
+      - recordings:/app/uploads/recordings
+      - ./.local/mk-tls:/app/.local/mk-tls:ro
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/api/health').then(r => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: rkx_consulting
+      MYSQL_USER: ${DB_USER:-rkx_app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./database.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+volumes:
+  db_data:
+  recordings:

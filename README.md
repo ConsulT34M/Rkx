@@ -18,7 +18,7 @@ HTML·CSS·JavaScript, Node.js/Express, MySQL 8로 만든 로컬 실행 프로�
 
 Node.js 20 이상과 MySQL 8 서버가 필요합니다.
 
-1. 새 데이터베이스라면 MySQL에서 `database.sql`을 실행합니다. 기존 RKX DB라면 적용 내역을 확인한 뒤 `migration-002.sql`·`migration-003.sql`·`migration-004.sql`·`migration-005.sql`·`migration-006.sql`을 순서대로 각각 **한 번만** 실행합니다. 실행 전 DB를 백업하세요.
+1. 새 데이터베이스라면 MySQL에서 `database.sql`을 실행합니다. 기존 RKX DB라면 적용 내역을 확인한 뒤 `migration-002.sql`부터 `migration-007.sql`까지 필요한 파일을 순서대로 실행합니다. 실행 전 DB를 백업하세요.
 2. MySQL에 `rkx_consulting` 접근 권한을 가진 전용 사용자를 만듭니다.
 3. `.env.example`을 `.env`로 복사해 DB 정보와 `APP_ORIGIN`을 설정합니다.
 4. `npm install`, `npm start`를 실행하고 `http://localhost:3000`을 엽니다.
@@ -51,7 +51,7 @@ npm run accounts:clear -- --yes
 
 ## 수탁사 연계 인터페이스
 
-**(주)인증정보평가(IJ-info)**의 실습 API는 [저장소 README](https://github.com/ConsulT34M/IJ-info/blob/main/README.md)의 `DIRECT` 계약에 맞췄습니다. **(주)말결(MK)** 연동은 별도 API 명세가 없어 프로토타입 규격입니다.
+(주)인증정보평가(IJ-info)의 실습 API는 [저장소 README](https://github.com/ConsulT34M/IJ-info/blob/main/README.md)의 `DIRECT` 계약에 맞췄습니다. (주)말결(MK) 고객 채팅은 MK의 상담 접수·입장 코드·메시지 API를 사용합니다.
 
 ### RKX 화면과 IJ-info DIRECT 연동
 
@@ -69,9 +69,11 @@ npm run accounts:clear -- --yes
 
 ### 말결 상담 접수·채팅
 
-`MK_WEBHOOK_URL`은 상담 접수, `MK_CHAT_WEBHOOK_URL`은 고객 채팅 메시지 전송에 사용합니다. 두 요청 모두 `MK_WEBHOOK_SECRET`으로 본문 HMAC-SHA256을 서명합니다. 말결의 상태 회신은 `POST /api/partner/status-callback`, 채팅 답변은 `POST /api/partner/chat-callback`으로 받습니다. 이 콜백에도 동일한 서명이 필요합니다.
+RKX의 채팅창과 MK 상담원 포털은 같은 WEB 상담방을 사용합니다. 기존 RKX DB에는 `migration-007.sql`을 적용하고, RKX 서버의 `.env`에 `MK_BASE_URL`과 `MK_PARTNER_TOKEN`을 설정합니다. 토큰 값은 MK 서버의 `PARTNER_TOKEN`과 같아야 합니다. 고객이 채팅창을 열면 MK 대기열에 접수되고, MK 상담원이 수락해 답하면 RKX에 표시됩니다. 종결된 방에서는 대화를 읽거나 ‘새 상담’을 시작할 수 있습니다.
 
-연동 값이 없거나 전송에 실패해도 접수·채팅은 RKX DB에 저장되고 전송 상태가 남습니다. **실제 말결 시스템에는 전달되지 않습니다.** 수탁사 테스트 계정의 별도 화면에서 배정·답변 흐름을 시험할 수 있습니다. 운영 환경에서는 실패 건 재전송 큐, 중복 이벤트 처리, 수탁사와 합의한 상세 API가 더 필요합니다.
+로컬 MK의 기본 주소는 `https://127.0.0.1:8443`입니다. 자체 서명 인증서를 쓰면 MK Nginx의 공개 `cert.pem`을 RKX의 `.local/mk-tls/cert.pem`에 두고 `MK_CA_FILE=.local/mk-tls/cert.pem`을 설정합니다. RKX를 Docker Desktop에서 실행할 때는 `MK_DOCKER_BASE_URL=https://host.docker.internal:8443`을 사용합니다.
+
+일반 상담·전화 접수는 `MK_WEBHOOK_URL`을 사용합니다. MK 방 연동을 설정하지 않은 설치에서는 기존 RKX 자체 채팅 및 `MK_CHAT_WEBHOOK_URL`을 사용합니다.
 
 `MK_PHONE_NUMBER`를 설정하면 고객센터에 `tel:` 전화 연결 버튼이 표시됩니다. 미설정 시 화면의 `02-1234-5678`은 연결되지 않는 예시 번호이며, 콜백 신청만 이용할 수 있습니다.
 

@@ -44,6 +44,7 @@ window.addEventListener('rkx-signup-complete', event => {
   state.user = event.detail.user;
   lastSessionTouch = Date.now();
   renderHeader(); renderIdentity();
+  if (!$('#chatPanel').classList.contains('hidden')) loadChat();
   toast('본인확인이 완료되어 계정이 생성되었습니다.');
 });
 window.addEventListener('rkx-identity-complete', refreshUser);

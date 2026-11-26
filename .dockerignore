@@ -1,0 +1,8 @@
+*
+!package.json
+!package-lock.json
+!*.js
+!public/
+!samples/people.json
+!scripts/
+!tests/
