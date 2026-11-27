@@ -39,6 +39,7 @@
     stage = next;
     feedback();
     root.classList.toggle('is-provider-step', next !== 'intro');
+    root.classList.toggle('is-phone-form', next === 'phone');
     if (next === 'intro') $('.identity-kicker').innerHTML = '<span class="identity-brand-rkx">R<span>K</span>X</span>';
     else $('.identity-kicker').innerHTML = '<img class="identity-provider-logo" src="/assets/ij-info-logo-transparent.png" alt="(주)인증정보평가 IJ-info">';
     $('.identity-phone').classList.toggle('is-lock-screen', next === 'phone_code');
@@ -81,6 +82,20 @@
     });
     consentInputs.forEach(input => input.addEventListener('change', syncAllConsent));
     syncAllConsent();
+    function autoAdvance(form, names) {
+      const fields = names.map(name => form.elements[name]);
+      fields.forEach((input, index) => {
+        input.addEventListener('input', () => {
+          input.value = input.value.replace(/\D/g, '').slice(0, input.maxLength);
+          if (index < fields.length - 1 && input.value.length === input.maxLength) {
+            fields[index + 1].focus();
+          }
+        });
+      });
+    }
+    autoAdvance($('#identityPhoneForm'), ['rrnFront', 'rrnBack']);
+    autoAdvance($('#identityPhoneForm'), ['phonePrefix', 'phoneMiddle', 'phoneLast']);
+    autoAdvance($('#identityCardForm'), ['rrnFront', 'rrnBack']);
     $('#identityBegin').addEventListener('click', run(async () => {
       const consents = Object.fromEntries(consentKeys.map((key, index) => [key, consentInputs[index].checked]));
       const result = await request('start', { consents });
