@@ -53,23 +53,22 @@ function supportResume() {
   if (channel && state.user?.role === 'customer') selectSupport(channel);
 }
 
+function createAiBubble(label, value, mine) {
+  const item = document.createElement('div');
+  item.className = 'chat-bubble' + (mine ? ' mine' : '');
+  const author = document.createElement('small');
+  author.textContent = label;
+  item.append(document.createTextNode(value), author);
+  return item;
+}
+
 function renderAiChat(chat) {
   aiSnapshot = chat;
   aiChatId = chat.chat_id || aiChatId || chatMessageId();
   const log = $('#aiMessages');
-  log.replaceChildren();
-  function bubble(label, value, mine) {
-    const item = document.createElement('div');
-    item.className = 'chat-bubble' + (mine ? ' mine' : '');
-    const author = document.createElement('small');
-    author.textContent = label;
-    item.append(document.createTextNode(value), author);
-    log.append(item);
-  }
-  bubble('AI 상담원', chat.greeting, false);
+  log.replaceChildren(createAiBubble('AI 상담원', chat.greeting, false));
   for (const turn of chat.turns) {
-    bubble('고객', turn.question, true);
-    bubble('AI 상담원', turn.answer, false);
+    log.append(createAiBubble('고객', turn.question, true), createAiBubble('AI 상담원', turn.answer, false));
   }
   log.scrollTop = log.scrollHeight;
   $('#aiOutcomeActions').hidden = !chat.turns.length || chat.outcome === 'RESOLVED';
@@ -116,19 +115,26 @@ async function openAiChat(fresh = false) {
 aiForm.addEventListener('submit', async event => {
   event.preventDefault();
   const view = supportView, input = aiForm.elements.body;
-  const body = input.value.trim();
+  const draft = input.value;
+  const body = draft.trim();
   if (!body || !aiChatId || input.disabled) return;
   if (pendingAiMessage?.body !== body) pendingAiMessage = { chat_id: aiChatId, request_id: chatMessageId(), body };
   setAiBusy(true);
+  const log = $('#aiMessages');
+  const pendingBubble = createAiBubble('고객', body, true);
+  log.append(pendingBubble);
+  log.scrollTop = log.scrollHeight;
+  input.value = '';
   $('#aiChatStatus').textContent = 'AI가 답변을 작성하고 있어요…';
   try {
     const chat = await api('/api/support/ai-chat/messages', { method: 'POST', body: pendingAiMessage });
     if (view !== supportView) return;
     pendingAiMessage = null;
-    input.value = '';
     renderAiChat(chat);
   } catch (error) {
     if (view !== supportView) return;
+    pendingBubble.remove();
+    input.value = draft;
     $('#aiChatStatus').textContent = error.message;
   } finally {
     if (view === supportView) {
