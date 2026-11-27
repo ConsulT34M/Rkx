@@ -14,6 +14,10 @@ import { createMkChat, isUuid, MkChatError } from './mk-chat.js';
 import { supportRoutes } from './support-routes.js';
 
 const app = express();
+// 리버스 프록시 뒤에서 실제 접속 IP(req.ip)를 쓰려면 TRUST_PROXY에 프록시 홉 수(예: 1)를 넣는다.
+// 비워 두면 직접 접속으로 보고 프록시 헤더를 믿지 않는다.
+const trustProxy = (process.env.TRUST_PROXY || '').trim();
+if (trustProxy) app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy === 'true' ? true : trustProxy);
 const root = path.dirname(fileURLToPath(import.meta.url));
 const recordingDir = path.join(root, 'uploads', 'recordings');
 const pool = mysql.createPool({
