@@ -11,7 +11,7 @@ services:
       DB_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env}
       MK_BASE_URL: ${MK_DOCKER_BASE_URL:-${MK_BASE_URL:-}}
     ports:
-      - "127.0.0.1:${PORT:-3000}:3000"
+      - "${BIND_ADDR:-127.0.0.1}:${PORT:-3000}:3000"
     volumes:
       - recordings:/app/uploads/recordings
       - ./.local/mk-tls:/app/.local/mk-tls:ro

@@ -16,7 +16,11 @@ import { supportRoutes } from './support-routes.js';
 const app = express();
 const root = path.dirname(fileURLToPath(import.meta.url));
 
-app.set('trust proxy', 2);
+// 실제 접속 IP(req.ip)를 읽을 때 믿을 리버스 프록시 홉 수. .env의 TRUST_PROXY로 바꾼다.
+// 값이 없으면 현재 배포 구성(프록시 2단)에 맞춘 2를 쓴다. 프록시 없이 직접 받으면 0을 넣는다.
+const trustProxy = (process.env.TRUST_PROXY || '').trim();
+app.set('trust proxy', trustProxy === '' ? 2 : /^\d+$/.test(trustProxy) ? Number(trustProxy)
+  : trustProxy === 'true' ? true : trustProxy === 'false' ? false : trustProxy);
 
 const recordingDir = path.join(root, 'uploads', 'recordings');
 const pool = mysql.createPool({
