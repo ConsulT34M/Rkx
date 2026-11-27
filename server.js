@@ -19,6 +19,9 @@ const app = express();
 const trustProxy = (process.env.TRUST_PROXY || '').trim();
 if (trustProxy) app.set('trust proxy', /^\d+$/.test(trustProxy) ? Number(trustProxy) : trustProxy === 'true' ? true : trustProxy);
 const root = path.dirname(fileURLToPath(import.meta.url));
+
+app.set('trust proxy', 2);
+
 const recordingDir = path.join(root, 'uploads', 'recordings');
 const pool = mysql.createPool({
   host: process.env.DB_HOST || '127.0.0.1', port: Number(process.env.DB_PORT || 3306),
