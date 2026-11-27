@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { passwordIssues } from './auth-policy.js';
 import {
   publicDemoPerson, samplePersonByName, partnerConfigured, partnerPartiallyConfigured,
-  sampleMatches, parseDemoImage, inboxUrl, ijinfoRequest
+  sampleMatches, parseDemoImage, issuedPhoneCode, ijinfoRequest
 } from './identity-service.js';
 
 const hash = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -111,11 +111,7 @@ export function mountSignupRoutes(app, { pool, route, limited }) {
         return problem(res, 'IJ-info 휴대폰 본인확인에 연결할 수 없습니다.', 502);
       }
       await pool.execute("UPDATE signup_requests SET stage='phone_code',phone=? WHERE id=?", [phone, record.id]);
-      return res.json({
-        stage: 'phone_code', phoneMask: issued.phone_mask, inboxUrl: inboxUrl(),
-        previewToken: issued.local_preview_token || null,
-        expiresInSeconds: 180, notice: '인증번호를 발급했습니다. 오른쪽 휴대폰 화면에서 확인해 주세요.'
-      });
+      return res.json(issuedPhoneCode(issued));
     }
 
     const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');

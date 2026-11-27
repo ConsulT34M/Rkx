@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import {
   demoPerson, demoPeople, samplePersonByName, sampleMatches, demoCardSvg,
   parseDemoImage, partnerConfigured, partnerPartiallyConfigured,
-  inboxUrl, ijinfoRequest, verifyIjinfoSignature
+  inboxUrl, inboxWidgetUrl, issuedPhoneCode, ijinfoRequest, verifyIjinfoSignature
 } from '../identity-service.js';
 
 const tinyPng = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/lZkAAAAASUVORK5CYII=';
@@ -28,6 +28,27 @@ test('demo upload accepts PNG and rejects content-type spoofing', () => {
   assert.equal(parseDemoImage(tinyPng).filename, 'sample.png');
   assert.throws(() => parseDemoImage(tinyPng.replace('image/png', 'image/jpeg')));
   assert.throws(() => parseDemoImage('data:image/png;base64,AAAA'));
+});
+
+test('the phone widget uses the configured browser address only in a partner demo', () => {
+  const env = {
+    NODE_ENV: 'development', IJINFO_BASE_URL: 'https://host.docker.internal:19443',
+    IJINFO_INBOX_URL: 'https://localhost:19443/test-inbox/', IJINFO_API_KEY: 'key', IJINFO_HMAC_SECRET: 'secret'
+  };
+  const issued = { phone_mask: '010-****-5678', local_preview_token: 'fixture' };
+  const response = issuedPhoneCode(issued, env);
+  assert.equal(response.inboxUrl, env.IJINFO_INBOX_URL);
+  assert.equal(response.inboxWidgetUrl, 'https://localhost:19443/test-inbox/widget');
+  assert.equal(response.previewToken, issued.local_preview_token);
+  assert.equal(inboxWidgetUrl({ ...env, IJINFO_BASE_URL: 'http://127.0.0.1:8000', IJINFO_INBOX_URL: '' }).href,
+    'http://127.0.0.1:8000/test-inbox/widget');
+  assert.equal(inboxWidgetUrl({ IJINFO_INBOX_URL: env.IJINFO_INBOX_URL }), null);
+  for (const address of ['http://example.test/test-inbox/', 'https://*.example.test/test-inbox/', 'https://user@localhost/test-inbox/']) {
+    assert.throws(() => inboxWidgetUrl({ ...env, IJINFO_INBOX_URL: address }), /IJINFO_INBOX_URL/);
+  }
+  const production = issuedPhoneCode(issued, { ...env, NODE_ENV: 'production' });
+  assert.equal(production.inboxWidgetUrl, null);
+  assert.equal(production.previewToken, null);
 });
 
 test('IJ-info DIRECT request signs exact body and mock CI uses sample number', async () => {

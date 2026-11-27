@@ -40,14 +40,18 @@ export function partnerPartiallyConfigured(env = process.env) {
   return ['IJINFO_BASE_URL', 'IJINFO_API_KEY', 'IJINFO_HMAC_SECRET'].some(key => Boolean(env[key])) && !partnerConfigured(env);
 }
 
-export function partnerBaseUrl(env = process.env) {
-  const url = new URL(env.IJINFO_BASE_URL);
-  const local = ['127.0.0.1', 'localhost'].includes(url.hostname);
-  if (url.username || url.password || url.search || url.hash ||
+function configuredIjinfoUrl(env, key) {
+  const url = new URL(env[key]);
+  const local = ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname);
+  if (!/^(?:[\w.-]+|\[[a-f\d:]+\])$/i.test(url.hostname) || url.username || url.password || url.search || url.hash ||
       !(url.protocol === 'https:' || (env.NODE_ENV !== 'production' && local && url.protocol === 'http:'))) {
-    throw new Error('IJINFO_BASE_URL은 HTTPS 또는 개발 환경의 로컬 HTTP 주소여야 합니다.');
+    throw new Error(`${key}에는 단일 HTTPS 주소 또는 개발 환경의 로컬 HTTP 주소를 지정해 주세요.`);
   }
-  return url.origin;
+  return url;
+}
+
+export function partnerBaseUrl(env = process.env) {
+  return configuredIjinfoUrl(env, 'IJINFO_BASE_URL').origin;
 }
 
 export function sampleMatches({ name, phone, rrn, issueDate }, person = demoPerson) {
@@ -81,7 +85,25 @@ export function parseDemoImage(dataUrl) {
 
 export function inboxUrl(env = process.env) {
   // 이용자 휴대폰의 문자 수신함. 인증번호는 여기로만 간다 — RKX 서버는 볼 수 없다.
-  return env.IJINFO_INBOX_URL || `${partnerBaseUrl(env)}/test-inbox/`;
+  return env.IJINFO_INBOX_URL ? configuredIjinfoUrl(env, 'IJINFO_INBOX_URL').href : `${partnerBaseUrl(env)}/test-inbox/`;
+}
+
+export function inboxWidgetUrl(env = process.env) {
+  if (env.NODE_ENV === 'production' || !partnerConfigured(env)) return null;
+  const url = new URL(inboxUrl(env));
+  const inboxPath = url.pathname.replace(/\/+$/, '') || '/test-inbox';
+  url.pathname = `${inboxPath}/widget`;
+  return url;
+}
+
+export function issuedPhoneCode(issued, env = process.env) {
+  const widget = inboxWidgetUrl(env);
+  return {
+    stage: 'phone_code', phoneMask: issued.phone_mask, inboxUrl: inboxUrl(env),
+    inboxWidgetUrl: widget?.href ?? null, previewToken: widget ? issued.local_preview_token || null : null,
+    expiresInSeconds: 180,
+    notice: widget ? '인증번호를 발급했습니다. 오른쪽 휴대폰 화면에서 확인해 주세요.' : '인증번호를 휴대폰 수신함에서 확인해 주세요.'
+  };
 }
 
 export function verifyIjinfoSignature(timestamp, body, signature, env = process.env) {

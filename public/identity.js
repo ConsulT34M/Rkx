@@ -135,23 +135,16 @@
         return;
       }
       sessionStorage.removeItem('rkx_demo_identity_code');
-      const inbox = result.inboxUrl ? new URL(result.inboxUrl) : null;
-      const local = ['localhost', '127.0.0.1'].includes(window.location.hostname)
-        && inbox && ['localhost', '127.0.0.1'].includes(inbox.hostname)
-        && inbox.protocol === 'http:';
-      if (!local) {
-        notice.textContent = '인증번호를 휴대폰 수신함에서 확인해 주세요.';
+      if (!result.inboxWidgetUrl) {
+        notice.textContent = result.notice || '인증번호를 휴대폰 수신함에서 확인해 주세요.';
         notice.hidden = false;
         sender.hidden = false;
         frame.hidden = true;
+        frame.src = 'about:blank';
         return;
       }
       frame.classList.toggle('requires-registration', !result.previewToken);
-      // 같은 사이트의 별도 포트를 써야 브라우저가 IJ-info 기기 세션을 iframe에 보낸다.
-      inbox.hostname = window.location.hostname;
-      inbox.pathname = '/test-inbox/widget';
-      inbox.search = '';
-      inbox.hash = '';
+      const inbox = new URL(result.inboxWidgetUrl);
       if (result.previewToken) inbox.searchParams.set('preview', result.previewToken);
       frame.src = inbox.href;
       frame.hidden = false;

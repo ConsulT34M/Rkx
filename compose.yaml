@@ -15,6 +15,7 @@ services:
     volumes:
       - recordings:/app/uploads/recordings
       - ./.local/mk-tls:/app/.local/mk-tls:ro
+      - ./.local/ijinfo-tls:/app/.local/ijinfo-tls:ro
     depends_on:
       db:
         condition: service_healthy

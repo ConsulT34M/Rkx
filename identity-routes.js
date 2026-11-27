@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import {
   publicDemoPerson, samplePersonByName, samplePersonByNo, demoCardSvg, demoFaceSvg,
   partnerConfigured, partnerPartiallyConfigured, sampleMatches, parseDemoImage,
-  inboxUrl, ijinfoRequest, verifyIjinfoSignature
+  issuedPhoneCode, ijinfoRequest, verifyIjinfoSignature
 } from './identity-service.js';
 
 const digest = value => crypto.createHash('sha256').update(value).digest('hex');
@@ -97,11 +97,7 @@ export function mountIdentityRoutes(app, { pool, requireUser, role, route, limit
         return apiError(res, 'IJ-info 휴대폰 본인확인에 연결할 수 없습니다.', 502);
       }
       await pool.execute("UPDATE identity_verifications SET stage='phone_code',pending_phone=? WHERE user_id=?", [phone, req.user.id]);
-      return res.json({
-        stage: 'phone_code', phoneMask: issued.phone_mask, inboxUrl: inboxUrl(),
-        previewToken: issued.local_preview_token || null,
-        expiresInSeconds: 180, notice: '인증번호를 발급했습니다. 오른쪽 휴대폰 화면에서 확인해 주세요.'
-      });
+      return res.json(issuedPhoneCode(issued));
     }
 
     const code = String(crypto.randomInt(0, 1000000)).padStart(6, '0');

@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 import { captchaNeeded, createCaptcha, validCaptchaId, verifyCaptchaAnswer } from './captcha.js';
 import { mountSignupRoutes } from './signup-routes.js';
 import { mountIdentityRoutes } from './identity-routes.js';
+import { inboxWidgetUrl } from './identity-service.js';
 import { createMkChat, isUuid, MkChatError } from './mk-chat.js';
 import { supportRoutes } from './support-routes.js';
 
@@ -76,13 +77,14 @@ function approvedPartnerUrl(value) {
   } catch { return false; }
 }
 
+const inboxWidget = inboxWidgetUrl();
+const frameSources = inboxWidget ? `'self' ${inboxWidget.origin}` : "'self'";
 app.disable('x-powered-by');
 app.use((req, res, next) => {
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
   res.setHeader('X-Frame-Options', 'DENY');
-  const localInboxFrame = process.env.NODE_ENV === 'production' ? '' : " frame-src 'self' http://localhost:8000 http://127.0.0.1:8000;";
-  res.setHeader('Content-Security-Policy', `default-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none';${localInboxFrame}`);
+  res.setHeader('Content-Security-Policy', `default-src 'self'; connect-src 'self' https://api.openai.com; img-src 'self' data:; media-src 'self' blob:; style-src 'self'; script-src 'self'; base-uri 'self'; frame-ancestors 'none'; frame-src ${frameSources};`);
   if (req.path.startsWith('/api/')) res.setHeader('Cache-Control', 'no-store');
   next();
 });
