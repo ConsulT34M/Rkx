@@ -93,8 +93,15 @@
         });
       });
     }
-    autoAdvance($('#identityPhoneForm'), ['rrnFront', 'rrnBack']);
-    autoAdvance($('#identityPhoneForm'), ['phonePrefix', 'phoneMiddle', 'phoneLast']);
+    const phoneForm = $('#identityPhoneForm');
+    autoAdvance(phoneForm, ['rrnFront', 'rrnBack']);
+    autoAdvance(phoneForm, ['phonePrefix', 'phoneMiddle', 'phoneLast']);
+    phoneForm.elements.rrnBack.addEventListener('input', () => {
+      if (phoneForm.elements.rrnBack.value.length === 7) {
+        const next = phoneForm.elements.phonePrefix.value.length === 3 ? 'phoneMiddle' : 'phonePrefix';
+        phoneForm.elements[next].focus();
+      }
+    });
     autoAdvance($('#identityCardForm'), ['rrnFront', 'rrnBack']);
     $('#identityBegin').addEventListener('click', run(async () => {
       const consents = Object.fromEntries(consentKeys.map((key, index) => [key, consentInputs[index].checked]));
